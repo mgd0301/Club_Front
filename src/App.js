@@ -1,24 +1,62 @@
-import logo from './logo.svg';
-import './App.css';
+import { HashRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { AuthProvider, AuthContext } from './contexts/AuthContext';
+import Auth from './components/Auth/Auth';
+import Dashboard from './pages/Dashboard';
+import Evento from './pages/Evento';
+import Registrar from './pages/Registrar';
+import { useContext } from 'react';
+
+const IndexRoute = () => {
+  const { currentUser, loading } = useContext(AuthContext);
+  if (loading) return <div>Cargando...</div>;
+  return currentUser ? <Navigate to="/dashboard" replace /> : <Auth />;
+};
+
+const ProtectedRoute = ({ children }) => {
+  const { currentUser, loading } = useContext(AuthContext);
+  const token = localStorage.getItem('token');
+
+  if (loading) return <div>Cargando...</div>;
+
+  // 👇 CLAVE: si hay token, dejá entrar
+  if (!currentUser && !token) {
+    return <Navigate to="/" replace />;
+  }
+
+  return children;
+};
+
 
 function App() {
   return (
-    <div className="App">
-      <header className="App-header">
-        <img src={logo} className="App-logo" alt="logo" />
-        <p>
-          Edit <code>src/App.js</code> and save to reload.
-        </p>
-        <a
-          className="App-link"
-          href="https://reactjs.org"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Learn React
-        </a>
-      </header>
-    </div>
+    <AuthProvider>
+      <Router>
+        <Routes>
+
+          <Route path="/" element={<IndexRoute />} />
+          <Route path="/registrar" element={<Registrar />} />
+
+          <Route
+            path="/dashboard"
+            element={
+              <ProtectedRoute>
+                <Dashboard />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/evento"
+            element={
+              <ProtectedRoute>
+                <Evento />
+              </ProtectedRoute>
+            }
+          />
+
+        </Routes>
+      </Router>
+    </AuthProvider>
   );
 }
 
