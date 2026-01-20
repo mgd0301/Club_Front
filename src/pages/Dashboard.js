@@ -757,7 +757,7 @@ const Dashboard = () => {
         <EventosContainer>
           {eventos.map((ev) => {
             const fecha = new Date(ev.fecha);
-            fecha.setDate(fecha.getDate() - 3);
+            
             const dia = fecha.toLocaleDateString("es-AR", {
               weekday: "short",
               day: "2-digit",
