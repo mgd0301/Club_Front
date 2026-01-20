@@ -1409,18 +1409,19 @@ const NombreEvento = styled.span`
   font-size: 16px;
   font-weight: 600;
   color: #2d3748;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 200px;
+  white-space: nowrap;  /* Mantiene en una línea */
+  overflow: visible;    /* ← CAMBIA de 'hidden' a 'visible' */
+  text-overflow: clip;  /* ← CAMBIA de 'ellipsis' a 'clip' o quítalo */
+  /* max-width: 200px; */  /* ← QUITA o comenta esta línea */
 
-  @media (max-width: 768px) {
+  /* También quita los media queries que limitan el ancho */
+  /* @media (max-width: 768px) {
     max-width: 180px;
   }
 
   @media (max-width: 480px) {
     max-width: 150px;
-  }
+  } */
 `;
 
 const DivisionEvento = styled.span`
