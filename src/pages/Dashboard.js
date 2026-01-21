@@ -1,6 +1,6 @@
 // Dashboard.js
 
-import React, { useContext, useState, useEffect } from "react";
+import React, { useContext, useState, useEffect, useRef } from "react";
 import styled from "styled-components";
 import axios from "axios";
 import { AuthContext } from "../contexts/AuthContext";
@@ -11,6 +11,8 @@ import EstadisticasAsistencias from "../components/EstadisticasAsistencias";
 import Header from "../components/Common/Header";
 import TabsCarrusel from "../components/TabsCarrusel";
 import Container80 from "../components/Common/Container80";
+import { HiDotsVertical } from "react-icons/hi";
+import { HiLockOpen, HiLockClosed } from "react-icons/hi2";
 
 import {
   FaUserCheck,
@@ -528,6 +530,75 @@ const Dashboard = () => {
     setFiltroAsistencia(valor);
   };
 
+
+function MenuEvento({ onFinalizar, onAbrir }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    const handler = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  return (
+    <Wrapper ref={ref} onClick={(e) => e.stopPropagation()}>
+      <IconWrapper>
+        <HiDotsVertical
+          size={22}
+          onClick={() => setOpen((o) => !o)}
+          style={{
+            cursor: "pointer",
+            color: "#333",
+            background: "#fff",
+            borderRadius: "50%",
+            padding: "4px",
+            boxShadow: "0 1px 4px rgba(0,0,0,.25)",
+          }}
+        />
+      </IconWrapper>
+
+      {open && (
+        <Menu>
+          <Item onClick={onAbrir}>Abrir</Item>
+          <Item onClick={onFinalizar}>Finalizar</Item>
+        </Menu>
+      )}
+    </Wrapper>
+  );
+}
+
+const estadoEvento = async(codevento, tipo) => {
+  //alert(`Estás seguro de ${tipo === "A" ? "abrir" : "finalizar"} el evento ${codevento}?`);
+try {
+    const response = await axios.post(
+      `${API_BASE_URL}/evento_estado`,
+      {
+        codevento: codevento,
+        tipo: tipo // O 'C' para cancelar
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem("token")}`,
+        },
+      }
+    );
+    
+    console.log("Evento cambiado:", response.data);
+    // Refrescar los eventos
+    fetchEventosDetalles();
+    
+  } catch (err) {
+    console.error("Error finalizando evento", err);
+  }
+
+};
+
+
   /* =========================
      Render
      ========================= */
@@ -756,22 +827,31 @@ const Dashboard = () => {
       {activeTab === "eventos" && (
         <EventosContainer>
           {eventos.map((ev) => {
+            console.log("FECHA Y HORA:" + ev.fecha);
+
+
             const fecha = new Date(ev.fecha);
-            
+
             const dia = fecha.toLocaleDateString("es-AR", {
+              timeZone: "America/Argentina/Buenos_Aires",  // ← AGREGAR
               weekday: "short",
               day: "2-digit",
               month: "2-digit",
             });
             const hora = fecha.toLocaleTimeString("es-AR", {
+              timeZone: "America/Argentina/Buenos_Aires",  // ← AGREGAR
               hour: "2-digit",
               minute: "2-digit",
             });
+
+
+            
 
             return (
               <EventoCard key={ev.codevento}>
                 <EventoHeader
                   open={ev.open}
+                  estado={ev.estado || "A"}
                   onClick={() =>
                     setEventos((prev) =>
                       prev.map((e) =>
@@ -782,6 +862,21 @@ const Dashboard = () => {
                     )
                   }
                 >
+
+                  {/*ev.estado === "A" ? <HiLockOpen size={30} /> : <HiLockClosed size={30} />*/}
+
+                  <MenuEventoWrapper>
+                  <MenuEvento
+                      onAbrir={() => estadoEvento(ev.codevento, "A")}
+                      onFinalizar={() => estadoEvento(ev.codevento, "F")}
+                    />
+                  </MenuEventoWrapper>
+                   <CandadoWrapper>
+                    {ev.estado === "A" ? 
+                      <HiLockOpen size={24} color="#28a745" /> : 
+                      <HiLockClosed size={24} color="#dc3545" />
+                    }
+                  </CandadoWrapper>  
                   <EventoFecha>
                     <strong>{dia}</strong>
                     <span>{hora}</span>
@@ -797,6 +892,7 @@ const Dashboard = () => {
                     </EventoDivisiones>
                   </EventoInfo>
 
+                    
                   {/* DESKTOP */}
                   <EventoAccionesHeader>
                     <BotonConContador 
@@ -905,24 +1001,32 @@ const Dashboard = () => {
                                 <BtnPresente
                                   onClick={() => asistencia(ev.codevento, p.codpersona, "P")}
                                   title="Presente"
+                                  disabled={ev.estado !== "A"}
+                                  style={ev.estado !== "A" ? { opcacity: 0.5, cursor: "not-allowed" } : {}}
                                 >
                                   ✔
                                 </BtnPresente>
                                 <BtnPresenteNo
                                   onClick={() => asistencia(ev.codevento, p.codpersona, "PN")}
                                   title="Presente no entrena"
+                                  disabled={ev.estado !== "A"}
+                                  style={ev.estado !== "A" ? { opcacity: 0.5, cursor: "not-allowed" } : {}}
                                 >
                                   ✔-
                                 </BtnPresenteNo>
                                 <BtnAusente
                                   onClick={() => asistencia(ev.codevento, p.codpersona, "A")}
                                   title="Ausente"
+                                  disabled={ev.estado !== "A"}
+                                  style={ev.estado !== "A" ? { opcacity: 0.5, cursor: "not-allowed" } : {}}
                                 >
                                   ✖
                                 </BtnAusente>
                                 <BtnAusenteAviso
                                   onClick={() => asistencia(ev.codevento, p.codpersona, "AA")}
                                   title="Ausente sin aviso"
+                                  disabled={ev.estado !== "A"}
+                                  style={ev.estado !== "A" ? { opcacity: 0.5, cursor: "not-allowed" } : {}}
                                 >
                                   ⚠
                                 </BtnAusenteAviso>
@@ -1262,16 +1366,41 @@ const EventoHeader = styled.div`
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 16px;
+  padding: 20px 16px 16px 60px;
   cursor: pointer;
   color: white;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: ${({ estado }) => {
+    switch(estado) {
+      case 'A': // Activo
+        return 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
+      case 'F': // Finalizado
+        return 'linear-gradient(135deg, #6c757d 0%, #495057 100%)';
+      case 'C': // Cancelado
+        return 'linear-gradient(135deg, #dc3545 0%, #c82333 100%)';
+      default:
+        return 'linear-gradient(135deg, #6c757d 0%, #495057 100%)';
+    }
+  }};
+  position: relative;
+  padding-left: 60px;
+  min-height: 80px;
 
   /* DESKTOP */
   flex-direction: row;
 
   &:hover {
-    background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
+    background: ${({ estado }) => {
+      switch(estado) {
+        case 'A':
+          return 'linear-gradient(135deg, #764ba2 0%, #667eea 100%)';
+        case 'F':
+          return 'linear-gradient(135deg, #495057 0%, #343a40 100%)';
+        case 'C':
+          return 'linear-gradient(135deg, #c82333 0%, #bd2130 100%)';
+        default:
+          return 'linear-gradient(135deg, #495057 0%, #343a40 100%)';
+      }
+    }};
   }
 
   /* 📱 MOBILE */
@@ -1279,6 +1408,7 @@ const EventoHeader = styled.div`
     flex-direction: column;
     align-items: stretch;
     text-align: center;
+    padding-left: 50px;
 
     ${({ open }) =>
       open &&
@@ -1294,6 +1424,7 @@ const EventoHeader = styled.div`
 const EventoFecha = styled.div`
   min-width: 80px;
   text-align: center;
+  margin-left: 0; /* ← Asegura que empiece después del menú */
 
   strong {
     font-size: 16px;
@@ -1307,7 +1438,6 @@ const EventoFecha = styled.div`
     font-weight: 500;
   }
 `;
-
 const EventoInfo = styled.div`
   flex: 1;
 `;
@@ -1463,7 +1593,42 @@ const AccionesEvento = styled.div`
    Botones de Asistencia
    ========================= */
 
-const BaseAsistencia = styled.button`
+   const BaseAsistencia = styled.button`
+  width: 48px;
+  height: 48px;
+  border: none;
+  border-radius: 12px;
+  cursor: pointer;
+  font-size: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+  font-weight: 700;
+  
+  /* Estilos cuando está deshabilitado */
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none !important;
+    box-shadow: none !important;
+  }
+  
+  &:disabled:hover {
+    transform: none !important;
+    box-shadow: none !important;
+  }
+  
+  &:disabled:hover::after {
+    opacity: 0;
+  }
+
+  /* ... resto de los estilos ... */
+`;
+
+const BaseAsistenciaOld = styled.button`
   width: 48px;
   height: 48px;
   border: none;
@@ -1783,3 +1948,93 @@ const CounterBadge = styled.span`
   }
 `;
 
+
+const Wrapper = styled.div`
+  position: relative;
+`;
+
+const Menu = styled.div`
+  position: absolute;
+  top: 36px; /* ← Bajamos el menú */
+  left: 0;
+  background: white;
+  color: #222;
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0,0,0,.2);
+  min-width: 120px;
+  z-index: 100;
+  
+  /* Para mobile: ajustamos también */
+  @media (max-width: 768px) {
+    top: 32px;
+  }
+`;
+
+const Item = styled.div`
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 14px;
+  color: #222;
+
+  &:hover {
+    background: #f2f2f2;
+  }
+`;
+
+const IconWrapper = styled.div`
+  border-radius: 50%;
+  padding: 4px;
+
+  &:hover {
+    background: #f0f0f0;
+  }
+`;
+
+const MenuEventoWrapper = styled.div`
+  /* Para PC: arriba a la izquierda pero con espacio específico */
+  position: absolute;
+  left: 16px;
+  top: 20px;
+  
+  /* Para Mobile: más cerca de los bordes */
+  @media (max-width: 768px) {
+    left: 12px;
+    top: 16px;
+  }
+  
+  @media (max-width: 480px) {
+    left: 8px;
+    top: 12px;
+  }
+  
+  z-index: 50;
+`;
+
+const CandadoWrapper = styled.div`
+  position: absolute;
+  left: 20px;
+  top: 66px; /* ← AUMENTA este valor para bajar el candado */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 40;
+  svg {
+    width: 32px;   /* ← Ancho del icono */
+    height: 32px;  /* ← Alto del icono */
+  }
+  
+  /* Efecto de brillo para el candado abierto (activo) */
+  svg[color="#28a745"] {
+    filter: drop-shadow(0 0 2px rgba(40, 167, 69, 0.5));
+  }
+  
+  @media (max-width: 768px) {
+    left: 16px;
+    top: 60px; /* ← También aumenta para mobile */
+  }
+  
+  @media (max-width: 480px) {
+    left: 12px;
+    top: 55px; /* ← Y para pantallas muy pequeñas */
+  }
+`;
