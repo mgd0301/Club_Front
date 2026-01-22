@@ -71,6 +71,7 @@ const Login = () => {
   return (
     <Container>
       <Title>Iniciar Sesión</Title>
+      <Title>Clubip</Title>
 
       <Form onSubmit={handleSubmit}>
         <InputGroup>
