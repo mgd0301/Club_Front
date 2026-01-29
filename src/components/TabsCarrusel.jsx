@@ -3,13 +3,14 @@
 import React from 'react';
 import styled from 'styled-components';
 
-const TabsCarrusel = ({ tabs, active, onChange }) => {
+const TabsCarrusel = ({ tabs, active, onChange, size = "md" }) => {
   return (
     <Container>
       {tabs.map((tab) => (
         <TabButton
           key={tab.id}
           active={active === tab.id}
+          size={size}
           onClick={() => onChange(tab.id)}
         >
           {tab.label}
@@ -20,6 +21,7 @@ const TabsCarrusel = ({ tabs, active, onChange }) => {
 };
 
 export default TabsCarrusel;
+
 
 
 // ======= styled =======
@@ -35,15 +37,18 @@ const Container = styled.div`
     display: none; /* Chrome */
   }
 `;
-
 const TabButton = styled.button`
   flex: 0 0 auto;
-  padding: 10px 20px;
   border-radius: 30px;
   border: none;
   cursor: pointer;
   font-weight: bold;
-  font-size: 15px;
+
+  padding: ${({ size }) =>
+    size === "sm" ? "6px 14px" : "10px 20px"};
+
+  font-size: ${({ size }) =>
+    size === "sm" ? "10px" : "10px"};
 
   background: ${({ active }) => (active ? "#e63946" : "#1d3557")};
   color: white;

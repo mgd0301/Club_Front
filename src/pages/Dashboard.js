@@ -7,7 +7,7 @@ import { AuthContext } from "../contexts/AuthContext";
 import { API_BASE_URL } from "../config";
 import { useNavigate } from "react-router-dom";
 import EstadisticasAsistencias from "../components/EstadisticasAsistencias";
-
+import ActividadesJugadores from "../components/ActividadesJugadores";
 import Header from "../components/Common/Header";
 import TabsCarrusel from "../components/TabsCarrusel";
 import Container80 from "../components/Common/Container80";
@@ -46,6 +46,29 @@ const Dashboard = () => {
   const [filtroAsistencia, setFiltroAsistencia] = useState(null);
   const [toast, setToast] = useState(null);
   const [contadoresAsistencia, setContadoresAsistencia] = useState({});
+  const esEntornoPruebas = currentClub?.codclub === 1;
+  const [actividades, setActividades] = useState([]);
+  const [actividadActiva, setActividadActiva] = useState([]);
+
+  const actividadesTabs = actividades.map(a => ({
+  id: a.codactividad,
+  label: a.descripcion
+}));
+
+ // useEffects
+  useEffect(() => {
+    if (currentClub?.codclub) {
+      fetchActividadesClub();
+    }
+  }, [currentClub]);
+
+  useEffect(() => {
+    if (actividades.length > 0 && !actividadActiva) {
+      setActividadActiva(actividades[0].codactividad);
+    }
+  }, [actividades]);
+
+ 
 
   /* =========================
      Estados personas
@@ -80,7 +103,11 @@ const Dashboard = () => {
   const tabs = [
     { id: "personas", label: "Personas" },
     { id: "eventos", label: "Eventos" },
+    { id:"actividades", label: "Actividades" },
   ];
+
+
+
 
   /* =========================
      Effects
@@ -214,7 +241,25 @@ const Dashboard = () => {
 
   /* =========================
      API
+
+
      ========================= */
+
+
+    const fetchActividadesClub = async () => {
+    const resp = await axios.post(
+
+      `${API_BASE_URL}/actividades_club`,
+      {       
+        codclub: currentClub.codclub,       
+      },
+      { headers: { Authorization: `Bearer ${localStorage.getItem("token")}` } }
+    );
+    console.log("Actividades:", resp.data);
+    setActividades(resp.data);
+  };
+
+
   const fetchDivisionesPersona = async () => {
     const resp = await axios.post(
       `${API_BASE_URL}/divisiones_persona`,
@@ -599,13 +644,114 @@ try {
 };
 
 
+
+
+// En Dashboard.js, después del useEffect que establece fechas
+
+// Seleccionar automáticamente la primera división
+// REEMPLAZA todos los efectos relacionados con divisiones por estos:
+
+
+
+
+// 1. Cargar divisiones
+useEffect(() => {
+  if (
+    activeTab !== "personas" ||
+    !currentUser?.codpersona ||
+    !currentClub?.codclub ||
+    !currentDisciplina?.coddisciplina
+  )
+    return;
+
+  fetchDivisionesPersona();
+}, [
+  activeTab,
+  currentUser?.codpersona,
+  currentClub?.codclub,
+  currentDisciplina?.coddisciplina,
+]);
+
+// 2. Cuando se cargan las divisiones, auto-seleccionar la primera SIEMPRE
+useEffect(() => {
+  if (divisiones.length > 0 && divisionesSeleccionadas.length === 0) {
+    console.log("Auto-seleccionando primera división:", divisiones[0]);
+    // Seleccionar la primera división automáticamente
+    setDivisionesSeleccionadas([divisiones[0]]);
+    setCurrentDivision(divisiones[0]);
+  }
+}, [divisiones]); // Solo dependemos de divisiones
+
+// 3. Cuando cambian las divisiones seleccionadas, cargar datos
+useEffect(() => {
+  if (activeTab === "personas" && divisionesSeleccionadas.length > 0) {
+    console.log("Cargando personas para divisiones:", divisionesSeleccionadas);
+    fetchPersonasDivision();
+  }
+}, [divisionesSeleccionadas, activeTab]);
+
+// 4. Para eventos, cargar cuando hay divisiones seleccionadas
+useEffect(() => {
+  if (activeTab !== "eventos") return;
+  if (!currentClub?.codclub) return;
+  if (divisionesSeleccionadas.length === 0) return;
+
+  console.log("Cargando eventos para divisiones:", divisionesSeleccionadas);
+  fetchEventosDetalles();
+}, [activeTab, currentClub, divisionesSeleccionadas, fechaInicio, fechaFin]);
+
+
   /* =========================
      Render
      ========================= */
+
+
+     const coddivisionesParaEstadisticas = divisionesSeleccionadas.length > 0 
+  ? divisionesSeleccionadas.map((d) => d.coddivision)
+  : [];
+
+console.log("Divisiones seleccionadas para estadísticas:", coddivisionesParaEstadisticas);
+console.log("Divisiones seleccionadas objeto:", divisionesSeleccionadas);
+ 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
   return (
-    <Container80>
+    <Container80 className={esEntornoPruebas ? "enterno-pruebas" : ""}>
+      {esEntornoPruebas && (
+        <BannerPruebas>
+           ⚠️ CLUBIP - ENTORNO DE PRUEBAS - Base de datos de desarrollo
+        </BannerPruebas>
+      )}
       <Header />
       <TabsCarrusel tabs={tabs} active={activeTab} onChange={setActiveTab} />
+      
+        {activeTab === "actividades" && (
+          <TabsCarrusel
+            tabs={actividadesTabs}
+            active={actividadActiva}
+            onChange={setActividadActiva}
+            size="sm"
+          />
+        )}
       <DivisionesContainer>
         {divisiones.map((d) => (
           <DivisionButton
@@ -751,15 +897,29 @@ try {
         </ToolbarRight>
       </ToolbarContainer>
 
+
       {mostrarEstadisticas && (
+        
         <EstadisticasAsistencias
           fechaDesde={fechaInicio}
-          fechaHasta={fechaFin}
+          fechaHasta={fechaFin}          
           coddivisiones={divisionesSeleccionadas.map((d) => d.coddivision)}
         />
       )}
 
       {/* STAFF - siempre mostrar sin filtro */}
+
+
+                {/* ================= ACTIVIDADES ================= */}
+          {activeTab === "actividades" &&
+            actividadActiva &&
+            divisionesSeleccionadas.length > 0 && (
+              <ActividadesJugadores
+                codactividad={actividadActiva}
+                divisiones={divisionesSeleccionadas}
+              />
+          )}
+
       {activeTab === "personas" && (
         <>
           {staff.length > 0 && (
@@ -1461,7 +1621,7 @@ const EventoPersonas = styled.div`
 const PersonaEventoRow = styled.div`
   display: flex;
   align-items: center;
-  padding: 14px 16px;
+  padding: 4px 16px;
   gap: 16px;
   background: ${({ bg }) => bg};
   border-left: 6px solid ${({ border }) => border};
@@ -2036,5 +2196,29 @@ const CandadoWrapper = styled.div`
   @media (max-width: 480px) {
     left: 12px;
     top: 55px; /* ← Y para pantallas muy pequeñas */
+  }
+`;
+
+
+// Estilos para el banner
+const BannerPruebas = styled.div`
+  background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
+  color: white;
+  text-align: center;
+  padding: 10px;
+  font-weight: bold;
+  font-size: 14px;
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+  
+  /* Efecto de parpadeo sutil */
+  animation: pulse 2s infinite;
+  
+  @keyframes pulse {
+    0% { opacity: 0.9; }
+    50% { opacity: 1; }
+    100% { opacity: 0.9; }
   }
 `;

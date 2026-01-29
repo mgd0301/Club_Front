@@ -15,35 +15,71 @@ import {
 const EstadisticasAsistencias = ({
   fechaDesde,
   fechaHasta,
-  coddivision
+  coddivisiones  // ← CAMBIADO: de coddivision a coddivisiones (plural)
 }) => {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
   const [mostrarDetalle, setMostrarDetalle] = useState(true);
   const [buscarpersona, setBuscarPersona] = useState("");
 
+  // DEBUG: Ver qué datos estamos recibiendo
+  console.log("=== EstadisticasAsistencias ===");
+  console.log("fechaDesde:", fechaDesde);
+  console.log("fechaHasta:", fechaHasta);
+  console.log("coddivisiones:", coddivisiones);
+  console.log("Es array?", Array.isArray(coddivisiones));
+  console.log("Cantidad:", coddivisiones?.length || 0);
+  console.log("==============================");
+
   useEffect(() => {
-    if (!fechaDesde || !fechaHasta) return;
+    // Validar que tengamos todos los datos necesarios
+    if (!fechaDesde || !fechaHasta || !coddivisiones || coddivisiones.length === 0) {
+      console.log("Faltan datos para cargar estadísticas");
+      if (rows.length > 0) setRows([]); // Limpiar datos si antes había
+      return;
+    }
+    
+    console.log("Cargando estadísticas para divisiones:", coddivisiones);
     fetchData();
-  }, [fechaDesde, fechaHasta, coddivision]);
+  }, [fechaDesde, fechaHasta, coddivisiones]);
 
   const fetchData = async () => {
     try {
+      // Validación adicional
+      if (!coddivisiones || coddivisiones.length === 0) {
+        console.log("Debe seleccionar al menos una división");
+        setRows([]);
+        return;
+      }
+
       setLoading(true);
+      console.log("Enviando al backend:", {
+        fecha_desde: fechaDesde.replaceAll("-", "") + "000000",
+        fecha_hasta: fechaHasta.replaceAll("-", "") + "235959",
+        coddivisiones: coddivisiones  // ← array completo, no solo el primero
+      });
+
       const resp = await axios.post(
         `${API_BASE_URL}/asistencias_divisiones`,
         {
           fecha_desde: fechaDesde.replaceAll("-", "") + "000000",
           fecha_hasta: fechaHasta.replaceAll("-", "") + "235959",
-          coddivisiones: coddivision ? [coddivision] : []
+          coddivisiones: coddivisiones  // ← ENVIAMOS EL ARRAY COMPLETO
         },
         {
           headers: { Authorization: `Bearer ${localStorage.getItem("token")}` }
         }
       );
-      setRows(resp.data);
+      
+      console.log("Estadísticas recibidas. Registros:", resp.data?.length || 0);
+      setRows(resp.data || []);
+      
     } catch (err) {
-      console.error("Error estadísticas:", err);
+      console.error("Error cargando estadísticas:", err);
+      if (err.response) {
+        console.error("Error del servidor:", err.response.data);
+      }
+      setRows([]); // Limpiar en caso de error
     } finally {
       setLoading(false);
     }
@@ -57,15 +93,21 @@ const EstadisticasAsistencias = ({
   <Container>
     <Header>
       <h3>📊 Estadísticas de Asistencia</h3>
+      {coddivisiones && coddivisiones.length > 0 && (
+        <Subtitle>
+          Mostrando datos para {coddivisiones.length} división(es) seleccionada(s)
+        </Subtitle>
+      )}
     </Header>
 
-    {loading ? (
+    {!coddivisiones || coddivisiones.length === 0 ? (
+      <MensajeAdvertencia>
+        ⚠️ Selecciona al menos una división para ver estadísticas
+      </MensajeAdvertencia>
+    ) : loading ? (
       <Loading>Cargando estadísticas...</Loading>
     ) : (
       <>
-        {/* ================= BOTÓN PARA MOSTRAR/OCULTAR DETALLE ================= */}
-       
-
         {/* ================= RESUMEN ================= */}
         <Resumen>
           <ResumenItem>
@@ -76,101 +118,123 @@ const EstadisticasAsistencias = ({
             <span>Asistencia promedio</span>
             <strong>{promedioAsistencia(jugadores)}%</strong>
           </ResumenItem>
+          <ResumenItem>
+            <span>Divisiones</span>
+            <strong>{coddivisiones.length}</strong>
+          </ResumenItem>
         </Resumen>
 
-        {/* ================= GRAFICO ================= */}
-        <SectionTitle>Asistencia (%)</SectionTitle>
-        <ChartContainer>
-          <ResponsiveContainer width="100%" height={260}>
-            <BarChart data={jugadores}>
-              <XAxis dataKey="nombre" tick={{ fontSize: 12 }} interval={0} />
-              <YAxis domain={[0, 100]} />
-              <Tooltip />
-              <Bar dataKey="porcentaje" fill="#28a745" />
-            </BarChart>
-          </ResponsiveContainer>
-        </ChartContainer>
+        {jugadores.length === 0 ? (
+          <MensajeAdvertencia>
+            📭 No hay datos de asistencia para las fechas y divisiones seleccionadas
+          </MensajeAdvertencia>
+        ) : (
+          <>
+            {/* ================= GRAFICO ================= */}
+            <SectionTitle>Asistencia (%)</SectionTitle>
+            <ChartContainer>
+              <ResponsiveContainer width="100%" height={260}>
+                <BarChart data={jugadores.slice(0, 20)}> {/* Mostrar solo primeros 20 para mejor visualización */}
+                  <XAxis 
+                    dataKey="nombre" 
+                    tick={{ fontSize: 12 }} 
+                    interval={0}
+                    angle={-45}
+                    textAnchor="end"
+                    height={80}
+                  />
+                  <YAxis domain={[0, 100]} />
+                  <Tooltip 
+                    formatter={(value) => [`${value}%`, 'Asistencia']}
+                    labelFormatter={(label) => `Jugador: ${label}`}
+                  />
+                  <Bar dataKey="porcentaje" fill="#28a745" name="Asistencia %" />
+                </BarChart>
+              </ResponsiveContainer>
+            </ChartContainer>
 
-        {/* ================= RANKING ================= */}
-        {/* Contenedor del título + botón */}
-           {/* Contenedor del título + botón */}
-<SectionHeader>
-  <SectionTitle>🏆 Detalle por Jugador</SectionTitle>
+            {/* ================= RANKING ================= */}
+            <SectionHeader>
+              <SectionTitle>🏆 Detalle por Jugador ({jugadores.length})</SectionTitle>
 
-  <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
-    {/* Botón de ojo para mostrar/ocultar detalle */}
-    <button
-      onClick={() => setMostrarDetalle(prev => !prev)}
-      style={{
-        padding: "6px 10px",
-        borderRadius: "6px",
-        border: "1px solid #ccc",
-        background: "#f0f0f0",
-        cursor: "pointer",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center"
-      }}
-    >
-      {mostrarDetalle ? <PiEyeBold size={20} /> : <PiEyeClosed size={20} />}
-    </button>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+                {/* Botón de ojo para mostrar/ocultar detalle */}
+                <button
+                  onClick={() => setMostrarDetalle(prev => !prev)}
+                  style={{
+                    padding: "6px 10px",
+                    borderRadius: "6px",
+                    border: "1px solid #ccc",
+                    background: "#f0f0f0",
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center"
+                  }}
+                >
+                  {mostrarDetalle ? <PiEyeBold size={20} /> : <PiEyeClosed size={20} />}
+                </button>
 
-    {/* Input para filtrar jugador */}
-    <SearchInput
-      type="text"
-      placeholder="Filtrar jugador..."
-      value={buscarpersona}
-      onChange={e => setBuscarPersona(e.target.value)}
-    />
-  </div>
-</SectionHeader>
+                {/* Input para filtrar jugador */}
+                <SearchInput
+                  type="text"
+                  placeholder="Filtrar jugador..."
+                  value={buscarpersona}
+                  onChange={e => setBuscarPersona(e.target.value)}
+                />
+              </div>
+            </SectionHeader>
 
-
-
-        <RankingTable>
-          <thead>
-            <tr>
-              <th>Jugador</th>
-              
-              {mostrarDetalle && (
-                <>
-                  <th title="PRESENTE">P</th>
-                  <th title="PRESENTE NO ENTRENA">PN</th>
-                  <th title="AUSENTE">A</th>
-                  <th title="AUSENTE CON AVISO">AA</th>
-                  <th title="DESCONOCIDO">I</th>
-                </>
-              )}
-              <th>% Asistencia</th>
-            </tr>
-          </thead>
-          <tbody>
-            {ranking.filter(j => j.nombre.toLowerCase().includes(buscarpersona.toLowerCase()))            
-            .map((j, i) => (
-              <tr key={j.codpersona} className={i % 2 === 0 ? "even" : "odd"}>
-                <td style={{alignContent: "initial", fontSize: "16px", fontWeight: "500"}} >{j.nombre}</td>
-                
-                {mostrarDetalle && (
-                  <>
-                    <td>{j.P || 0}</td>
-                    <td>{j.PN || 0}</td>
-                    <td>{j.A || 0}</td>
-                    <td>{j.AA || 0}</td>
-                    <td>{j.I || 0}</td>
-                  </>
-                )}
-                <td>
-                  <Badge>{j.porcentaje}%</Badge>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </RankingTable>
+            <RankingTable>
+              <thead>
+                <tr>
+                  <th>Jugador</th>
+                  
+                  {mostrarDetalle && (
+                    <>
+                      <th title="PRESENTE">P</th>
+                      <th title="PRESENTE NO ENTRENA">PN</th>
+                      <th title="AUSENTE">A</th>
+                      <th title="AUSENTE CON AVISO">AA</th>
+                      <th title="DESCONOCIDO">I</th>
+                      <th>Total</th>
+                    </>
+                  )}
+                  <th>% Asistencia</th>
+                </tr>
+              </thead>
+              <tbody>
+                {ranking
+                  .filter(j => j.nombre.toLowerCase().includes(buscarpersona.toLowerCase()))            
+                  .map((j, i) => (
+                    <tr key={j.codpersona} className={i % 2 === 0 ? "even" : "odd"}>
+                      <td style={{alignContent: "initial", fontSize: "16px", fontWeight: "500"}}>
+                        {j.nombre}
+                      </td>
+                      
+                      {mostrarDetalle && (
+                        <>
+                          <td>{j.P || 0}</td>
+                          <td>{j.PN || 0}</td>
+                          <td>{j.A || 0}</td>
+                          <td>{j.AA || 0}</td>
+                          <td>{j.I || 0}</td>
+                          <td><strong>{j.total || 0}</strong></td>
+                        </>
+                      )}
+                      <td>
+                        <Badge porcentaje={j.porcentaje}>{j.porcentaje}%</Badge>
+                      </td>
+                    </tr>
+                  ))}
+              </tbody>
+            </RankingTable>
+          </>
+        )}
       </>
     )}
   </Container>
 );
-
 };
 
 export default EstadisticasAsistencias;
@@ -199,7 +263,9 @@ const agruparPorJugador = (rows) => {
     }
 
     // Incrementamos el contador del tipo de asistencia
-    map[r.codpersona][code]++;
+    if (map[r.codpersona][code] !== undefined) {
+      map[r.codpersona][code]++;
+    }
     // Incrementamos el total de registros de este jugador
     map[r.codpersona].total++;
   });
@@ -211,7 +277,6 @@ const agruparPorJugador = (rows) => {
 
   return Object.values(map);
 };
-
 
 const promedioAsistencia = (jugadores) => {
   if (!jugadores.length) return 0;
@@ -239,11 +304,32 @@ const Container = styled.div`
 
 const Header = styled.div`
   margin-bottom: 16px;
+  text-align: center;
+`;
+
+const Subtitle = styled.div`
+  font-size: 14px;
+  color: #666;
+  margin-top: 5px;
+  font-weight: normal;
 `;
 
 const Loading = styled.div`
   padding: 50px;
   text-align: center;
+  color: #666;
+  font-size: 16px;
+`;
+
+const MensajeAdvertencia = styled.div`
+  padding: 20px;
+  text-align: center;
+  background: #fff3cd;
+  border: 1px solid #ffeaa7;
+  border-radius: 8px;
+  color: #856404;
+  margin: 20px 0;
+  font-size: 15px;
 `;
 
 const Resumen = styled.div`
@@ -251,6 +337,7 @@ const Resumen = styled.div`
   gap: 20px;
   flex-wrap: wrap;
   margin-bottom: 20px;
+  justify-content: center;
 `;
 
 const ResumenItem = styled.div`
@@ -261,48 +348,60 @@ const ResumenItem = styled.div`
   padding: 16px;
   text-align: center;
 
-  span { display: block; font-size: 14px; color: #666; }
-  strong { font-size: 26px; }
+  span { 
+    display: block; 
+    font-size: 14px; 
+    color: #666; 
+    margin-bottom: 8px;
+  }
+  
+  strong { 
+    font-size: 26px; 
+    color: #333;
+  }
 `;
 
 const SectionTitle = styled.h4`
   margin: 0;
   font-size: 18px;
+  color: #333;
 `;
-
 
 const SectionHeader = styled.div`
   display: flex;
   align-items: center;
-  gap: 10px; /* Espacio entre título y botón */
-  margin: 20px 20px 10px 20px; 
-  flex-wrap: wrap; /* Permite que el botón baje en pantallas muy chicas */
+  justify-content: space-between;
+  gap: 10px;
+  margin: 25px 0 15px 0;
+  flex-wrap: wrap;
 `;
-
-
 
 const ChartContainer = styled.div`
   padding: 0 0 20px;
+  height: 300px;
 `;
+
 const RankingTable = styled.table`
   width: 100%;
   border-collapse: collapse;
   margin-bottom: 20px;
 
   th, td {
-    padding: 6px 8px;
+    padding: 8px 10px;
     border-bottom: 1px solid #eee;
     text-align: center;
-    white-space: nowrap;
   }
 
   th {
     background: #f8f9fa;
-    font-size: 12px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #555;
+    white-space: nowrap;
   }
 
   td {
-    font-size: 12px;
+    font-size: 14px;
   }
 
   tbody tr:nth-child(even) {
@@ -313,28 +412,36 @@ const RankingTable = styled.table`
     background: #fff;
   }
 
+  tbody tr:hover {
+    background: #f0f8ff;
+  }
+
   @media(max-width: 600px){
     th, td {
-      font-size: 10px;
-      padding: 4px 6px;
+      font-size: 11px;
+      padding: 6px 8px;
     }
   }
 `;
 
-
-
 const Badge = styled.span`
-  background: #28a745;
+  background: ${props => {
+    if (props.porcentaje >= 80) return '#28a745';
+    if (props.porcentaje >= 60) return '#ffc107';
+    return '#dc3545';
+  }};
   color: white;
-  padding: 4px 10px;
+  padding: 6px 12px;
   border-radius: 20px;
   font-weight: 600;
+  font-size: 14px;
+  display: inline-block;
+  min-width: 60px;
 `;
 
-
 const SearchInput = styled.input`
-  width: 45%;
-  padding: 10px 10px 10px 36px;
+  width: 200px;
+  padding: 8px 12px;
   border-radius: 6px;
   border: 1px solid #ced4da;
   font-size: 14px;
@@ -348,5 +455,9 @@ const SearchInput = styled.input`
   
   &::placeholder {
     color: #6c757d;
+  }
+  
+  @media(max-width: 600px){
+    width: 150px;
   }
 `;

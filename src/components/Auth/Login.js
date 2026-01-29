@@ -11,6 +11,8 @@ const Login = () => {
   const [loading, setLoading] = useState(false);
 
   const { setCurrentUser } = useContext(AuthContext);
+
+
   const navigate = useNavigate();
 
   // 👉 Si ya hay token, no mostrar login
@@ -70,8 +72,8 @@ const Login = () => {
 
   return (
     <Container>
-      <Title>Iniciar Sesión</Title>
-      <Title>Clubip</Title>
+      <Title>Iniciar Sesión (Clubip)</Title>
+      
 
       <Form onSubmit={handleSubmit}>
         <InputGroup>
