@@ -29,6 +29,7 @@ import {
 import { MdSick } from "react-icons/md";
 import { CiSquareAlert } from "react-icons/ci";
 import { FcStatistics } from "react-icons/fc";
+import Swal from "sweetalert2";
 
 const Dashboard = () => {
   const { currentUser, currentClub, currentDisciplina } = useContext(AuthContext);
@@ -48,7 +49,7 @@ const Dashboard = () => {
   const [contadoresAsistencia, setContadoresAsistencia] = useState({});
   const esEntornoPruebas = currentClub?.codclub === 1;
   const [actividades, setActividades] = useState([]);
-  const [actividadActiva, setActividadActiva] = useState([]);
+  const [actividadActiva, setActividadActiva] = useState(null);
 
   const actividadesTabs = actividades.map(a => ({
   id: a.codactividad,
@@ -197,6 +198,19 @@ const Dashboard = () => {
     return contadores;
   };
 
+
+  const parsearFechaArgentina = (fechaStr) => {
+  // Si viene con T, separar
+  const [fechaPart, horaPart] = fechaStr.split('T');
+  const [year, month, day] = fechaPart.split('-').map(Number);
+  
+  // Si tiene hora, obtenerla, sino '00:00'
+  const [hour, minute] = (horaPart ? horaPart.split(':') : ['0', '0']).map(Number);
+  
+  // Crear fecha con los componentes (esto evita la conversión UTC)
+  return new Date(year, month - 1, day, hour, minute);
+};
+
   // Componente BotonConContador
   const BotonConContador = ({ estado, evento, onClick }) => {
     // Obtener el contador del estado global
@@ -261,6 +275,8 @@ const Dashboard = () => {
 
 
   const fetchDivisionesPersona = async () => {
+
+    
     const resp = await axios.post(
       `${API_BASE_URL}/divisiones_persona`,
       {
@@ -343,6 +359,8 @@ const Dashboard = () => {
 
   const fetchPersonasDivision = async () => {
     // Si no hay divisiones seleccionadas, vaciamos
+
+    console.log("API_URL:", API_BASE_URL);
     if (divisionesSeleccionadas.length === 0) {
       setPersonasDivision([]);
       return;
@@ -576,7 +594,7 @@ const Dashboard = () => {
   };
 
 
-function MenuEvento({ onFinalizar, onAbrir }) {
+function MenuEvento({ onFinalizar, onAbrir, onEliminar }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
 
@@ -611,6 +629,7 @@ function MenuEvento({ onFinalizar, onAbrir }) {
         <Menu>
           <Item onClick={onAbrir}>Abrir</Item>
           <Item onClick={onFinalizar}>Finalizar</Item>
+          <Item onClick={onEliminar}>Eliminar</Item>
         </Menu>
       )}
     </Wrapper>
@@ -620,6 +639,21 @@ function MenuEvento({ onFinalizar, onAbrir }) {
 const estadoEvento = async(codevento, tipo) => {
   //alert(`Estás seguro de ${tipo === "A" ? "abrir" : "finalizar"} el evento ${codevento}?`);
 try {
+
+if (tipo === "B"){
+  const result = await Swal.fire({
+    title: "¿Estás seguro de eliminar el evento?",
+    text: "No podrás recuperar este evento",
+    icon: "warning",
+    showCancelButton: true,
+    confirmButtonText: "Sí, eliminar",
+    cancelButtonText: "Cancelar",
+  });
+
+  if (!result.isConfirmed) return;
+} 
+
+console.log("Ejecutando..." + tipo + " " + codevento);
     const response = await axios.post(
       `${API_BASE_URL}/evento_estado`,
       {
@@ -655,6 +689,14 @@ try {
 
 
 // 1. Cargar divisiones
+
+
+useEffect(() => {
+  if (activeTab !== "eventos") {
+    setMostrarEstadisticas(false);
+  }
+}, [activeTab]);
+
 useEffect(() => {
   if (
     activeTab !== "personas" ||
@@ -710,8 +752,7 @@ useEffect(() => {
   ? divisionesSeleccionadas.map((d) => d.coddivision)
   : [];
 
-console.log("Divisiones seleccionadas para estadísticas:", coddivisionesParaEstadisticas);
-console.log("Divisiones seleccionadas objeto:", divisionesSeleccionadas);
+
  
 
 
@@ -781,9 +822,12 @@ console.log("Divisiones seleccionadas objeto:", divisionesSeleccionadas);
         ))}
       </DivisionesContainer>
 
+     {(activeTab === "personas" || activeTab === "eventos") && ( 
+      
       <ToolbarContainer>
         <ToolbarLeft>
           <GreenButton
+           title="Nuevo"
             onClick={() => {
               if (activeTab === "personas") {
                 navigate("/persona");
@@ -798,6 +842,7 @@ console.log("Divisiones seleccionadas objeto:", divisionesSeleccionadas);
 
           {/* BOTÓN ACTUALIZADO: */}
           <RefreshButton
+          title="Refrescar"
             onClick={() => {
               if (divisionesSeleccionadas.length > 0) {
                 if (activeTab === "personas") {
@@ -892,13 +937,15 @@ console.log("Divisiones seleccionadas objeto:", divisionesSeleccionadas);
                   }
                 })()}
               </ContadorJugadores>
-            </SearchWrapper>
+            </SearchWrapper>            
           )}
         </ToolbarRight>
       </ToolbarContainer>
+      
+      )}
 
 
-      {mostrarEstadisticas && (
+      {activeTab === "eventos" && mostrarEstadisticas && (
         
         <EstadisticasAsistencias
           fechaDesde={fechaInicio}
@@ -911,14 +958,24 @@ console.log("Divisiones seleccionadas objeto:", divisionesSeleccionadas);
 
 
                 {/* ================= ACTIVIDADES ================= */}
-          {activeTab === "actividades" &&
-            actividadActiva &&
-            divisionesSeleccionadas.length > 0 && (
-              <ActividadesJugadores
-                codactividad={actividadActiva}
-                divisiones={divisionesSeleccionadas}
-              />
-          )}
+            {activeTab === "actividades" &&
+              actividadActiva &&
+              
+                <ActividadesJugadores
+                  codclub={currentClub.codclub}
+                  usuario={currentUser}
+                  codactividad={actividadActiva}                  
+                  nombreActividad={
+                    actividades.find(a => a.codactividad === actividadActiva)?.descripcion 
+                    || "Actividad"
+                  }
+                  divisiones={divisionesSeleccionadas}
+                  todasLasDIvisiones={divisiones}
+                  coddisciplina={currentDisciplina?.coddisciplina ?? 0}
+                  divisionesSeleccionadas={divisionesSeleccionadas}
+                  setDivisionesSeleccionadas={setDivisionesSeleccionadas}
+                />
+            }
 
       {activeTab === "personas" && (
         <>
@@ -990,20 +1047,19 @@ console.log("Divisiones seleccionadas objeto:", divisionesSeleccionadas);
             console.log("FECHA Y HORA:" + ev.fecha);
 
 
-            const fecha = new Date(ev.fecha);
+            const fecha = parsearFechaArgentina(ev.fecha);
 
-            const dia = fecha.toLocaleDateString("es-AR", {
-              timeZone: "America/Argentina/Buenos_Aires",  // ← AGREGAR
-              weekday: "short",
-              day: "2-digit",
-              month: "2-digit",
-            });
-            const hora = fecha.toLocaleTimeString("es-AR", {
-              timeZone: "America/Argentina/Buenos_Aires",  // ← AGREGAR
-              hour: "2-digit",
-              minute: "2-digit",
-            });
+              const dia = fecha.toLocaleDateString("es-AR", {
+                weekday: "short",
+                day: "2-digit",
+                month: "2-digit",
+              });
 
+              const hora = fecha.toLocaleTimeString("es-AR", {
+                hour: "numeric",
+                minute: "2-digit",
+                hour12: true,
+              });
 
             
 
@@ -1024,11 +1080,12 @@ console.log("Divisiones seleccionadas objeto:", divisionesSeleccionadas);
                 >
 
                   {/*ev.estado === "A" ? <HiLockOpen size={30} /> : <HiLockClosed size={30} />*/}
-
+                  {/*{ev.codevento}*/}
                   <MenuEventoWrapper>
                   <MenuEvento
                       onAbrir={() => estadoEvento(ev.codevento, "A")}
                       onFinalizar={() => estadoEvento(ev.codevento, "F")}
+                      onEliminar={() => estadoEvento(ev.codevento, "B")}
                     />
                   </MenuEventoWrapper>
                    <CandadoWrapper>
@@ -1124,6 +1181,7 @@ console.log("Divisiones seleccionadas objeto:", divisionesSeleccionadas);
 
                 {ev.open && (
                   <EventoBody>
+                    {ev.personas && ev.personas.length > 0 ? (
                     <EventoPersonas>
                       {[...ev.personas]
                         .filter(
@@ -1195,6 +1253,11 @@ console.log("Divisiones seleccionadas objeto:", divisionesSeleccionadas);
                           );
                         })}
                     </EventoPersonas>
+                    ) : (
+                      <NoPersonasMensaje>
+                        No hay personas inscritas en este evento.
+                      </NoPersonasMensaje>
+                    )}
                   </EventoBody>
                 )}
               </EventoCard>
@@ -2221,4 +2284,25 @@ const BannerPruebas = styled.div`
     50% { opacity: 1; }
     100% { opacity: 0.9; }
   }
+`;
+
+const EmptyEventoMessage = styled.div`
+  text-align: center;
+  padding: 40px 20px;
+  color: #6c757d;
+  font-size: 16px;
+  background: #f8f9fa;
+  border-radius: 8px;
+  margin: 20px;
+`;
+
+
+const NoPersonasMensaje = styled.div`
+  text-align: center;
+  padding: 20px;
+  color: #666;
+  font-size: 14px;
+  background: #f1f3f4;
+  border-radius: 6px;
+  margin: 10px;
 `;

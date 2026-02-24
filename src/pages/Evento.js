@@ -16,6 +16,7 @@ const CrearEvento = () => {
   const [fecha, setFecha] = useState("");
   const [hora, setHora] = useState("");
   const [observacion, setObservacion] = useState("");
+  const [loading, setLoading] = useState(false);
 
   /* =========================
      Cargar divisiones
@@ -34,7 +35,12 @@ const CrearEvento = () => {
 
 
   const registrarEvento = async () => {
+
+    if (loading) return;
   try {
+    setLoading(true);
+
+    
 
     console.log("tipo usuario:" + currentUser.codpersona + "-" + currentUser.tipo_usuario);
 
@@ -65,6 +71,8 @@ const CrearEvento = () => {
   } catch (err) {
     console.error(err);
     alert("Error al crear evento");
+  } finally {
+    setLoading(false);
   }
 };
 
@@ -176,10 +184,14 @@ const CrearEvento = () => {
             onChange={(e) => setObservacion(e.target.value)}
           />
         </Section>
-
+        
+        {loading && <p>Creando evento, por favor espere...</p>}
+        
         <Buttons>
           <Cancel onClick={() => navigate("/dashboard")}>Cancelar</Cancel>
-          <Save onClick={() => registrarEvento()}>Registrar</Save>
+          <Save onClick={registrarEvento} disabled={loading}>
+          {loading ? "Guardando..." : "Registrar"}
+        </Save>
         </Buttons>
       </Container>
     </>
@@ -245,10 +257,10 @@ const Buttons = styled.div`
 
 const Save = styled.button`
   padding: 10px 18px;
-  background: #2ecc71;
+  background: ${({ disabled }) => (disabled ? "#95a5a6" : "#2ecc71")};
   border: none;
   color: white;
-  cursor: pointer;
+  cursor: ${({ disabled }) => (disabled ? "not-allowed" : "pointer")};
 `;
 
 const Cancel = styled.button`

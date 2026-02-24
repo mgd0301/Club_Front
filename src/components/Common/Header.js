@@ -79,7 +79,16 @@ const AppHeader = () => {
           {currentUser?.photoURL && (
             <Avatar src={currentUser.photoURL} alt={currentUser.persona} />
           )}
-          <UserName>{currentUser?.apodo || currentUser?.email}</UserName>
+          {/*<UserName>{currentUser?.apodo || currentUser?.nombre}</UserName>*/}
+         <UserName>
+  {currentUser ? (
+    currentUser.apodo && 
+    typeof currentUser.apodo === 'string' && 
+    currentUser.apodo.trim() 
+      ? currentUser.apodo 
+      : currentUser.nombre || ''
+  ) : ''}
+</UserName>
         </UserInfo>
         <LogoutButton
           onClick={() => {
