@@ -5,6 +5,7 @@ import { AuthContext } from "../contexts/AuthContext";
 import { API_BASE_URL } from "../config";
 import Header from "../components/Common/Header";
 import { useNavigate } from "react-router-dom";
+import { localToUTC } from "../utils/helpers";
 
 const CrearEvento = () => {
   const navigate = useNavigate();
@@ -21,6 +22,21 @@ const CrearEvento = () => {
   /* =========================
      Cargar divisiones
      ========================= */
+
+
+     useEffect(() => {
+  const hoy = new Date();
+  
+  const year = hoy.getFullYear();
+  const month = String(hoy.getMonth() + 1).padStart(2, "0");
+  const day = String(hoy.getDate()).padStart(2, "0");
+
+  const fechaLocal = `${year}-${month}-${day}`;
+  
+  setFecha(fechaLocal);
+}, []);
+
+
   useEffect(() => {
     if (
       !currentUser?.codpersona ||
@@ -34,7 +50,70 @@ const CrearEvento = () => {
 
 
 
-  const registrarEvento = async () => {
+
+
+
+
+
+
+const registrarEvento = async () => {
+    if (loading) return;
+    
+    if (!divisionesSeleccionadas || divisionesSeleccionadas.length === 0) {
+        alert("Debe seleccionar al menos una división para registrar el evento");
+        return;
+    }
+    
+    try {
+        setLoading(true);
+
+        console.log("tipo usuario:" + currentUser.codpersona + "-" + currentUser.tipo_usuario);
+
+        // 🔥 Convertir fecha y hora local del usuario a UTC
+        // Si no hay hora, usamos "00:00"
+        const fechaHoraUTC = localToUTC(fecha, hora || "00:00");
+        
+        if (!fechaHoraUTC) {
+            alert("Error al convertir la fecha/hora");
+            return;
+        }
+        
+        // Separar la fecha UTC y la hora UTC (sin segundos)
+        const [fechaUTC, horaUTCCompleta] = fechaHoraUTC.split(' ');
+        const horaUTC = horaUTCCompleta.substring(0, 5); // "HH:MM"
+        
+        console.log("Original local:", fecha, hora);
+        console.log("Enviando UTC:", fechaUTC, horaUTC);
+
+        await axios.post(
+            `${API_BASE_URL}/nuevo_evento`,
+            {
+                fecha: fechaUTC,      // 🔥 fecha en UTC
+                hora: horaUTC,        // 🔥 hora en UTC
+                observacion,
+                divisiones: divisionesSeleccionadas,
+                tipo: 'E',
+                subtipo: 'C'
+            },
+            {
+                headers: {
+                    Authorization: `Bearer ${localStorage.getItem("token")}`
+                }
+            }
+        );
+
+        alert("Evento creado correctamente");
+        navigate("/dashboard");
+
+    } catch (err) {
+        console.error(err);
+        alert("Error al crear evento");
+    } finally {
+        setLoading(false);
+    }
+};
+
+  const registrarEventoOld = async () => {
 
     if (loading) return;
   try {

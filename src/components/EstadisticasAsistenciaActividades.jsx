@@ -33,6 +33,28 @@ const EstadisticasAsistenciaActividades = ({
   console.log("esperado:", esperado);
   console.log("==============================");
 
+
+
+   const formatearFechaBackend = (fechaStr, finDelDia = false) => {
+    if (!fechaStr) return '';
+    
+    let fecha;
+    if (typeof fechaStr === 'string') {
+      fecha = new Date(fechaStr);
+    } else {
+      fecha = fechaStr;
+    }
+    
+    const year = fecha.getFullYear();
+    const month = String(fecha.getMonth() + 1).padStart(2, '0');
+    const day = String(fecha.getDate()).padStart(2, '0');
+    
+    return finDelDia
+      ? `${year}${month}${day}235959`
+      : `${year}${month}${day}000000`;
+  };
+
+
   useEffect(() => {
     // Validar que tengamos todos los datos necesarios
     if (!fechaDesde || !fechaHasta || !codactividad) {
@@ -46,43 +68,53 @@ const EstadisticasAsistenciaActividades = ({
   }, [fechaDesde, fechaHasta, coddivisiones, codactividad, esperado]);
 
   const fetchData = async () => {
-    try {
-      setLoading(true);
-      
-      const requestBody = {
-        codactividad,
-        esperado,
-        dias: calcularDias(fechaDesde, fechaHasta)
-      };
-      
-      // Solo incluir coddivisiones si tiene al menos un elemento
-      if (coddivisiones && coddivisiones.length > 0) {
-        requestBody.coddivisiones = coddivisiones;
-      }
-
-      console.log("Enviando al backend:", requestBody);
-
-      const resp = await axios.post(
-        `${API_BASE_URL}/historial_asistencia_actividades`,
-        requestBody,
-        {
-          headers: { Authorization: `Bearer ${localStorage.getItem("token")}` }
-        }
-      );
-      
-      console.log("Respuesta del servidor:", resp.data);
-      setData(resp.data);
-      
-    } catch (err) {
-      console.error("Error cargando estadísticas:", err);
-      if (err.response) {
-        console.error("Error del servidor:", err.response.data);
-      }
-      setData(null);
-    } finally {
-      setLoading(false);
+  try {
+    setLoading(true);
+    
+    // 🔥 FORMATEAR FECHAS CORRECTAMENTE
+    const fechaDesdeFormateada = formatearFechaBackend(fechaDesde, false);
+    const fechaHastaFormateada = formatearFechaBackend(fechaHasta, true);
+    
+    const requestBody = {
+      codactividad,
+      esperado,
+      fecha_desde: fechaDesdeFormateada,   // ✅ Ej: "20260330000000"
+      fecha_hasta: fechaHastaFormateada    // ✅ Ej: "20260403235959"
+    };
+    
+    // Solo incluir coddivisiones si tiene al menos un elemento
+    if (coddivisiones && coddivisiones.length > 0) {
+      requestBody.coddivisiones = coddivisiones;
     }
-  };
+
+    console.log("📅 Fechas ORIGINALES:", { fechaDesde, fechaHasta });
+    console.log("📅 Fechas FORMATEADAS:", { 
+      fecha_desde: fechaDesdeFormateada, 
+      fecha_hasta: fechaHastaFormateada 
+    });
+    console.log("Enviando al backend historial_asistencia_actividades:", requestBody);
+
+    const resp = await axios.post(
+      `${API_BASE_URL}/historial_asistencia_actividades`,
+      requestBody,
+      {
+        headers: { Authorization: `Bearer ${localStorage.getItem("token")}` }
+      }
+    );
+    
+    console.log("Respuesta del servidor:", resp.data);
+    setData(resp.data);
+    
+  } catch (err) {
+    console.error("Error cargando estadísticas:", err);
+    if (err.response) {
+      console.error("Error del servidor:", err.response.data);
+    }
+    setData(null);
+  } finally {
+    setLoading(false);
+  }
+};
 
   // Procesar los datos para el ranking por jugador
   const jugadores = useMemo(() => {
@@ -490,12 +522,7 @@ const Badge = styled.span`
 `;
 
 const BadgeSmall = styled.span`
-  background: ${props => {
-    const valor = parseFloat(props.porcentaje) || 0;
-    if (valor >= 80) return '#28a745';
-    if (valor >= 60) return '#ffc107';
-    return '#dc3545';
-  }};
+  
   color: white;
   padding: 3px 8px;
   border-radius: 12px;

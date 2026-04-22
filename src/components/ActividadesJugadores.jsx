@@ -31,6 +31,7 @@ import {
   Legend,
   Filler
 } from 'chart.js';
+import { UTCToLocal, localToUTC } from "../utils/helpers";
 
 import EstadisticasAsistenciaActividades from "./EstadisticasAsistenciaActividades";
 
@@ -45,47 +46,36 @@ ChartJS.register(
   Filler
 );
 
-
-
-
-// Función para procesar asistencias y agrupar por semana - AHORA DINÁMICA
-// Función para procesar asistencias y agrupar por semana - CORREGIDA (7 días exactos)
+// Función para procesar asistencias y agrupar por semana
 const procesarAsistenciasPorSemana = (asistencias, dias) => {
   if (!asistencias || asistencias.length === 0) return null;
 
-  // Crear un mapa de todas las semanas en el período
   const semanasMap = new Map();
   const hoy = new Date();
   const fechaInicio = new Date();
   fechaInicio.setDate(hoy.getDate() - dias);
   
-  // Ajustar fechaInicio al inicio del día
   fechaInicio.setHours(0, 0, 0, 0);
   hoy.setHours(23, 59, 59, 999);
 
-  console.log(`📅 Procesando ${dias} días: ${fechaInicio.toLocaleDateString()} - ${hoy.toLocaleDateString()}`);
-
-  // Función para obtener el lunes de una fecha (inicio de semana)
   const getLunes = (fecha) => {
     const nuevaFecha = new Date(fecha);
-    const dia = nuevaFecha.getDay(); // 0 = domingo, 1 = lunes, ..., 6 = sábado
-    const diff = dia === 0 ? 6 : dia - 1; // Si es domingo (0), resto 6 para llegar al lunes anterior
+    const dia = nuevaFecha.getDay();
+    const diff = dia === 0 ? 6 : dia - 1;
     nuevaFecha.setDate(nuevaFecha.getDate() - diff);
     nuevaFecha.setHours(0, 0, 0, 0);
     return nuevaFecha;
   };
 
-  // Función para obtener el domingo de una fecha (fin de semana)
   const getDomingo = (fecha) => {
     const nuevaFecha = new Date(fecha);
     const dia = nuevaFecha.getDay();
-    const diff = dia === 0 ? 0 : 7 - dia; // Si es domingo (0), no sumo nada
+    const diff = dia === 0 ? 0 : 7 - dia;
     nuevaFecha.setDate(nuevaFecha.getDate() + diff);
     nuevaFecha.setHours(23, 59, 59, 999);
     return nuevaFecha;
   };
 
-  // Generar todas las semanas del período
   let fechaCursor = new Date(fechaInicio);
   while (fechaCursor <= hoy) {
     const inicioSemana = getLunes(fechaCursor);
@@ -102,15 +92,15 @@ const procesarAsistenciasPorSemana = (asistencias, dias) => {
       });
     }
     
-    // Avanzar 7 días exactos
     fechaCursor.setDate(fechaCursor.getDate() + 7);
   }
 
-  // Contar asistencias por semana
   asistencias.forEach(asis => {
-    const [dia, mes, anio] = asis.fecha.split('/');
+    // 🔥 Convertir la fecha UTC del backend a LOCAL para el agrupamiento
+    const fechaLocalStr = UTCToLocal(asis.fecha, 'date'); // "08/04/2026"
+    const [dia, mes, anio] = fechaLocalStr.split('/');
     const fechaAsis = new Date(anio, mes - 1, dia);
-    fechaAsis.setHours(12, 0, 0, 0); // Mediodía para evitar problemas de zona horaria
+    fechaAsis.setHours(12, 0, 0, 0);
     
     const inicioSemana = getLunes(fechaAsis);
     const semanaKey = inicioSemana.toISOString().split('T')[0];
@@ -118,11 +108,10 @@ const procesarAsistenciasPorSemana = (asistencias, dias) => {
     if (semanasMap.has(semanaKey)) {
       const semana = semanasMap.get(semanaKey);
       semana.asistencias++;
-      semana.fechas.push(asis.fecha);
+      semana.fechas.push(fechaLocalStr);
     }
   });
 
-  // Convertir a array y ordenar (de más antigua a más reciente para el gráfico)
   const semanas = Array.from(semanasMap.values())
     .sort((a, b) => {
       const [diaA, mesA, anioA] = a.semana_inicio.split('/');
@@ -130,24 +119,7 @@ const procesarAsistenciasPorSemana = (asistencias, dias) => {
       return new Date(anioA, mesA - 1, diaA) - new Date(anioB, mesB - 1, diaB);
     });
 
-  // Verificación de semanas de 7 días
-  semanas.forEach(sem => {
-    const [diaIni, mesIni, anioIni] = sem.semana_inicio.split('/');
-    const [diaFin, mesFin, anioFin] = sem.semana_fin.split('/');
-    
-    const inicio = new Date(anioIni, mesIni - 1, diaIni);
-    const fin = new Date(anioFin, mesFin - 1, diaFin);
-    
-    const diffDias = Math.round((fin - inicio) / (1000 * 60 * 60 * 24));
-    
-    if (diffDias !== 6) {
-      console.warn(`⚠️ Semana con ${diffDias + 1} días: ${sem.semana_inicio} - ${sem.semana_fin}`);
-    }
-  });
-
-  // Calcular total
   const total = semanas.reduce((acc, sem) => acc + sem.asistencias, 0);
-
 
   return {
     semanas,
@@ -165,18 +137,14 @@ const procesarAsistenciasPorSemana = (asistencias, dias) => {
 };
 
 // Componente memoizado para el gráfico de LÍNEAS
-// Componente memoizado para el gráfico de LÍNEAS - CON FECHAS CORREGIDAS
 const GraficoAsistencias = React.memo(({ datos }) => {
   if (!datos?.semanas?.length) return null;
   
   const semanasConCero = datos.semanas.map(s => s.asistencias === 0);
-  
-  // Determinar el máximo de asistencias para la escala Y
   const maxAsistencias = Math.max(7, ...datos.semanas.map(s => s.asistencias));
   
   const chartData = {
     labels: datos.semanas.map(s => {
-      // Formato: "17/11" (solo inicio de semana)
       const inicio = s.semana_inicio.split('/').slice(0,2).join('/');
       return inicio;
     }),
@@ -221,7 +189,6 @@ const GraficoAsistencias = React.memo(({ datos }) => {
           label: (context) => {
             const semana = datos.semanas[context.dataIndex];
             const asistencias = context.raw;
-            const totalDias = semana.fechas.length;
             
             if (asistencias === 0) {
               return ['❌ Sin asistencias esta semana'];
@@ -276,23 +243,6 @@ const GraficoAsistencias = React.memo(({ datos }) => {
     }
   };
   
-  // Verificar que todas las semanas sean de 7 días
-    const semanasCorrectas = datos.semanas.every(s => {
-    const [diaIni, mesIni, anioIni] = s.semana_inicio.split('/');
-    const [diaFin, mesFin, anioFin] = s.semana_fin.split('/');
-    const inicio = new Date(anioIni, mesIni - 1, diaIni);
-    const fin = new Date(anioFin, mesFin - 1, diaFin);
-    const diffDias = Math.round((fin - inicio) / (1000 * 60 * 60 * 24));
-    return diffDias === 6;
-  });
-  
-  if (!semanasCorrectas) {
-    console.warn('⚠️ Algunas semanas no tienen 7 días exactos');
-  }
-  
-
-  
-
   return (
     <>
       <GraficoWrapper>
@@ -328,6 +278,33 @@ const GraficoAsistencias = React.memo(({ datos }) => {
   );
 }, (prevProps, nextProps) => prevProps.datos === nextProps.datos);
 
+// ========== COMPONENTE MENÚ SEMÁFORO MEJORADO ==========
+const MenuSemaforo = ({ onSelect, codpersona, codasistencia, onClose, className }) => {
+  const opciones = [
+    { color: 'verde', valor: 'V', icono: '🟢', bg: 'linear-gradient(135deg, #28a745, #20c997)' },
+    { color: 'amarillo', valor: 'A', icono: '🟡', bg: 'linear-gradient(135deg, #ffc107, #fd7e14)' },
+    { color: 'rojo', valor: 'R', icono: '🔴', bg: 'linear-gradient(135deg, #dc3545, #c82333)' }
+  ];
+
+  return (
+    <MenuContainerSemaforo className={className}>
+      {opciones.map((op) => (
+        <OpcionSemaforo
+          key={op.valor}
+          onClick={() => {
+            onSelect(codpersona, codasistencia, op.valor);
+            onClose();
+          }}
+          style={{ background: op.bg }}
+          title={`Marcar como ${op.color}`}
+        >
+          {op.icono}
+        </OpcionSemaforo>
+      ))}
+    </MenuContainerSemaforo>
+  );
+};
+
 const ActividadesJugadores = ({
   codclub,
   usuario,
@@ -350,37 +327,116 @@ const ActividadesJugadores = ({
   const [datosGrafico, setDatosGrafico] = useState({});
   const [cargandoGrafico, setCargandoGrafico] = useState({});
   const [modoVista, setModoVista] = useState({});
-  const [diasSeleccionados, setDiasSeleccionados] = useState({}); // Para guardar los días por persona
+  const [diasSeleccionados, setDiasSeleccionados] = useState({});
   const [fechaInicio, setFechaInicio] = useState("");
   const [fechaFin, setFechaFin] = useState("");
   const [mostrarEstadisticas, setMostrarEstadisticas] = useState(false);
+  
+  // ===== ESTADO PARA CONTROLAR EL MENÚ DEL SEMÁFORO =====
+  const [menuSemaforoAbierto, setMenuSemaforoAbierto] = useState(null);
+
+
+
+
+
+
+
+  const actualizarSemaforoHistorial = async (codpersona, codasistencia, valor) => {
+  try {
+    console.log('🚦 Actualizando semáforo desde historial:', { codpersona, codasistencia, valor });
+    
+    const response = await axios.post(
+      `${API_BASE_URL}/asistencia_actividad_actualizar_semaforo`,
+      { 
+        codasistencia,
+        semaforo: valor 
+      },
+      { headers: { Authorization: `Bearer ${localStorage.getItem("token")}` } }
+    );
+    
+    if (response.data.success) {
+      // Actualizar el historial local
+      setHistorial(prev => ({
+        ...prev,
+        [codpersona]: prev[codpersona].map(asis => 
+          asis.codasistencia === codasistencia 
+            ? { ...asis, semaforo: valor }
+            : asis
+        )
+      }));
+      
+      // Si esta asistencia es la última, también actualizar la persona principal
+      setPersonas(prev => prev.map(p => 
+        p.codpersona === codpersona && p.codultima_asistencia === codasistencia
+          ? { ...p, semaforo_ult_asistencia: valor }
+          : p
+      ));
+      
+      setMenuSemaforoAbierto(null);
+      console.log('✅ Semáforo actualizado en historial');
+    }
+    
+  } catch (error) {
+    console.error('❌ Error:', error);
+    alert('Error al actualizar el semáforo');
+  }
+};
+
+
+
+
+  // ===== FUNCIÓN PARA ACTUALIZAR SEMÁFORO =====
+  const actualizarSemaforo = async (codpersona, codasistencia, valor) => {
+    try {
+      console.log('🚦 Actualizando semáforo:', { codpersona, codasistencia, valor });
+      
+      // Llamada al endpoint
+      const response = await axios.post(
+        `${API_BASE_URL}/asistencia_actividad_actualizar_semaforo`,
+        { 
+          codasistencia,
+          semaforo: valor 
+        },
+        { headers: { Authorization: `Bearer ${localStorage.getItem("token")}` } }
+      );
+      
+      if (response.data.success) {
+        // Actualizamos el estado de personas para que el cambio se vea inmediatamente
+        setPersonas(prev => prev.map(p => 
+          p.codpersona === codpersona 
+            ? { ...p, semaforo_ult_asistencia: valor }
+            : p
+        ));
+        
+        setMenuSemaforoAbierto(null);
+        console.log('✅ Semáforo actualizado en BD');
+      }
+      
+    } catch (error) {
+      console.error('❌ Error:', error);
+      alert('Error al actualizar el semáforo');
+    }
+  };
 
   // ========== LÓGICA PRINCIPAL ==========
-
-
-
-   useEffect(() => {
+  useEffect(() => {
     const timer = setTimeout(() => {
       setFiltroDebounced(filtroNombre);
-    }, 400); // Espera 400ms después de que el usuario deje de escribir
-
-    // Cleanup: cancela el timer si el usuario sigue escribiendo
+    }, 400);
     return () => clearTimeout(timer);
   }, [filtroNombre]);
   
   const toggleEstadisticas = () => {
-      setMostrarEstadisticas(!mostrarEstadisticas);
+    setMostrarEstadisticas(!mostrarEstadisticas);
   }
   
-  // Determinar qué divisiones usar para la búsqueda
   const getDivisionesParaBuscar = () => {
-    if (filtroDebounced && filtroDebounced.trim() !== "") {  // 👈 CAMBIO
+    if (filtroDebounced && filtroDebounced.trim() !== "") {
       return todasLasDivisiones || [];
     }
     return divisionesSeleccionadas || [];
   };
 
-  // Efecto principal
   useEffect(() => {
     if (!codactividad) {
       setPersonas([]);
@@ -389,27 +445,27 @@ const ActividadesJugadores = ({
 
     const divisionesParaBuscar = getDivisionesParaBuscar();
     
-    if (!filtroDebounced && divisionesParaBuscar.length === 0) {  // 👈 CAMBIO
+    if (!filtroDebounced && divisionesParaBuscar.length === 0) {
       setPersonas([]);
       setLoading(false);
       return;
     }
 
     fetchPersonasActividades(divisionesParaBuscar);
-  }, [codactividad, divisionesSeleccionadas, filtroDebounced]); 
+  }, [codactividad, divisionesSeleccionadas, filtroDebounced]);
 
   useEffect(() => {
-  const { inicio, fin } = getWeekRange();
-  setFechaInicio(inicio);
-  setFechaFin(fin);
-}, []);
-  // Cargar personas
+    const { inicio, fin } = getWeekRange();
+    setFechaInicio(inicio);
+    setFechaFin(fin);
+  }, []);
+
   const fetchPersonasActividades = async (divisionesParaBuscar) => {
     try {
       setLoading(true);
 
       let respuestas = [];
-      if (filtroDebounced && filtroDebounced.trim() !== "") {  // 👈 CAMBIO
+      if (filtroDebounced && filtroDebounced.trim() !== "") {
         const res = await axios.post(
           `${API_BASE_URL}/personas_jugadores_actividades`,
           { 
@@ -417,7 +473,7 @@ const ActividadesJugadores = ({
             coddivision: 0,
             coddisciplina: coddisciplina, 
             codactividad: codactividad,
-            filtro: filtroDebounced || ""  // 👈 CAMBIO
+            filtro: filtroDebounced || ""
           },
           { headers: { Authorization: `Bearer ${localStorage.getItem("token")}` } }
         );     
@@ -440,6 +496,7 @@ const ActividadesJugadores = ({
         );
       }
 
+      console.log('Respuestas:', respuestas);
       const todas = respuestas.flatMap((r) => r.data);
       const unicas = Array.from(
         new Map(todas.map((p) => [p.codpersona, p])).values()
@@ -453,9 +510,41 @@ const ActividadesJugadores = ({
       setLoading(false);
     }
   };
-
-  // ========== FUNCIONES ==========
   
+
+
+
+
+
+
+  const formatearFechaBackend = (fecha, finDelDia = false) => {
+  // fecha es un objeto Date en hora LOCAL del usuario
+  const year = fecha.getFullYear();
+  const month = String(fecha.getMonth() + 1).padStart(2, '0');
+  const day = String(fecha.getDate()).padStart(2, '0');
+  
+  const hora = finDelDia ? "23:59" : "00:00";
+  const fechaLocalStr = `${year}-${month}-${day}`;
+  
+  // Convertir a UTC
+  const fechaUTC = localToUTC(fechaLocalStr, hora);
+  
+  // Devolver en formato YYYYMMDDHHmmss (sin separadores)
+  return fechaUTC.replace(/[-: ]/g, '');
+};
+
+//08042026
+const formatearFechaBackendOld = (fecha, finDelDia = false) => {
+  const year = fecha.getFullYear();
+  const month = String(fecha.getMonth() + 1).padStart(2, '0');
+  const day = String(fecha.getDate()).padStart(2, '0');
+
+  return finDelDia
+    ? `${year}${month}${day}235959`
+    : `${year}${month}${day}000000`;
+};
+
+
   const esFechaHoy = (fechaStr) => {
     if (!fechaStr) return false;
     const fecha = new Date(fechaStr).toLocaleDateString("es-AR", {
@@ -480,63 +569,87 @@ const ActividadesJugadores = ({
     return dias[diaIngles] || diaIngles;
   };
 
-  const cargarHistorial = async (codpersona, dias = 130) => {
-    setCargandoHistorial(prev => ({ ...prev, [codpersona]: true }));
-    try {
-      const response = await axios.post(
-        `${API_BASE_URL}/historial_asistencias`,
-        { codpersona, codactividad, dias },
-        { headers: { Authorization: `Bearer ${localStorage.getItem("token")}` } }
-      );
-      
-      const asistencias = response.data.asistencias || [];
-      setHistorial(prev => ({
-        ...prev,
-        [codpersona]: asistencias
-      }));
-      
-    } catch (error) {
-      console.error("❌ Error cargando historial:", error);
-    } finally {
-      setCargandoHistorial(prev => ({ ...prev, [codpersona]: false }));
-    }
-  };
+const cargarHistorial = async (codpersona) => {
+  setCargandoHistorial(prev => ({ ...prev, [codpersona]: true }));
 
-  const cargarDatosGrafico = async (codpersona, dias = 90) => {
-    setCargandoGrafico(prev => ({ ...prev, [codpersona]: true }));
-    try {
-      console.log(`📊 Cargando gráfico para ${codpersona} con ${dias} días`);
-      
-      const response = await axios.post(
-        `${API_BASE_URL}/historial_asistencias`,
-        { 
-          codpersona, 
-          codactividad, 
-          dias
-        },
-        { headers: { Authorization: `Bearer ${localStorage.getItem("token")}` } }
-      );
-      
-      const asistencias = response.data.asistencias || [];
-      const datosProcesados = procesarAsistenciasPorSemana(asistencias, dias);
-      
-      console.log(`✅ Gráfico procesado: ${datosProcesados?.semanas.length} semanas`);
-      
-      setDatosGrafico(prev => ({ ...prev, [codpersona]: datosProcesados }));
-      setDiasSeleccionados(prev => ({ ...prev, [codpersona]: dias }));
-      
-    } catch (error) {
-      console.error("❌ Error cargando gráfico:", error);
-    } finally {
-      setCargandoGrafico(prev => ({ ...prev, [codpersona]: false }));
-    }
-  };
+  const hoy = new Date();
+  const desde = new Date();
+  desde.setDate(hoy.getDate() - 30); // Últimos 30 días
+
+  // 🔥 CLAVE: Formatear las fechas como YYYYMMDDHHmmss
+  const fecha_desde = formatearFechaBackend(desde, false); // 000000
+  const fecha_hasta = formatearFechaBackend(hoy, true);    // 235959
+
+  console.log('📅 Enviando fechas:', { fecha_desde, fecha_hasta });
+
+  try {
+    const response = await axios.post(
+      `${API_BASE_URL}/historial_asistencias`,
+      { 
+        codpersona,           // ✅
+        codactividad,        // ✅
+        fecha_desde,         // ✅ formato: YYYYMMDD000000
+        fecha_hasta          // ✅ formato: YYYYMMDD235959
+      },
+      { headers: { Authorization: `Bearer ${localStorage.getItem("token")}` } }
+    );
+    
+    const asistencias = response.data.asistencias || [];
+    setHistorial(prev => ({
+      ...prev,
+      [codpersona]: asistencias
+    }));
+    
+  } catch (error) {
+    console.error("❌ Error cargando historial:", error);
+    alert('Error al cargar el historial');
+  } finally {
+    setCargandoHistorial(prev => ({ ...prev, [codpersona]: false }));
+  }
+};
+  
+
+const cargarDatosGrafico = async (codpersona, dias = 90) => {
+  setCargandoGrafico(prev => ({ ...prev, [codpersona]: true }));
+  
+  const hoy = new Date();
+  const desde = new Date();
+  desde.setDate(hoy.getDate() - dias);
+  
+  // 🔥 CLAVE: Formatear las fechas
+  const fecha_desde = formatearFechaBackend(desde, false); // 000000
+  const fecha_hasta = formatearFechaBackend(hoy, true);    // 235959
+  
+  try {
+    const response = await axios.post(
+      `${API_BASE_URL}/historial_asistencias`,
+      { 
+        codpersona, 
+        codactividad, 
+        fecha_desde,    // ✅
+        fecha_hasta     // ✅
+      },
+      { headers: { Authorization: `Bearer ${localStorage.getItem("token")}` } }
+    );
+    
+    const asistencias = response.data.asistencias || [];
+    const datosProcesados = procesarAsistenciasPorSemana(asistencias, dias);
+    
+    setDatosGrafico(prev => ({ ...prev, [codpersona]: datosProcesados }));
+    setDiasSeleccionados(prev => ({ ...prev, [codpersona]: dias }));
+    
+  } catch (error) {
+    console.error("❌ Error cargando gráfico:", error);
+  } finally {
+    setCargandoGrafico(prev => ({ ...prev, [codpersona]: false }));
+  }
+};
+
 
   const toggleVista = (codpersona) => {
     const nuevaVista = modoVista[codpersona] === 'grafico' ? 'lista' : 'grafico';
     setModoVista(prev => ({ ...prev, [codpersona]: nuevaVista }));
     
-    // Si vamos a gráfico y no hay datos, cargar con valor por defecto (90 días)
     if (nuevaVista === 'grafico' && !datosGrafico[codpersona]) {
       cargarDatosGrafico(codpersona, 90);
     }
@@ -546,89 +659,110 @@ const ActividadesJugadores = ({
     const nuevoEstado = !expandido[codpersona];
     setExpandido(prev => ({ ...prev, [codpersona]: nuevoEstado }));
     if (nuevoEstado) {
-      cargarHistorial(codpersona, 30); // 30 días para la lista
+      cargarHistorial(codpersona);
     }
   };
 
   const cambiarPeriodoGrafico = (codpersona, dias) => {
-    console.log(`🔄 Cambiando período a ${dias} días para ${codpersona}`);
     cargarDatosGrafico(codpersona, dias);
   };
 
-  const registrarAsistenciaActividad = async (codpersona, codasistenciaExistente = 0) => {
-    try {
-      setRegistrando(prev => ({ ...prev, [codpersona]: true }));
-      
-      const fecha = new Date().toISOString();
+const registrarAsistenciaActividad = async (
+  codpersona,
+  codasistenciaExistente = 0,
+  tipoFecha = 'hoy'
+) => {
+  try {
+    setRegistrando(prev => ({ ...prev, [codpersona]: true }));
+    
+    let fechaObj = new Date();
 
-      await axios.post(
-        `${API_BASE_URL}/actividad_asistencia`,
-        {
-          codasistencia: codasistenciaExistente || 0,
-          codclub,
-          codactividad,
-          codpersona,
-          fecha,
-          observacion: '',
-          estado: 'A'
-        },
-        { headers: { Authorization: `Bearer ${localStorage.getItem("token")}` } }
-      );
-      
-      setPersonas(prev =>
-        prev.map(p => {
-          if (p.codpersona !== codpersona) return p;
+    if (tipoFecha === 'ayer') {
+      fechaObj.setDate(fechaObj.getDate() - 1);
+    } else if (tipoFecha === 'antesDeAyer') {
+      fechaObj.setDate(fechaObj.getDate() - 2);
+    }
+
+    // 🔥 Convertir a UTC antes de enviar
+    const year = fechaObj.getFullYear();
+    const month = String(fechaObj.getMonth() + 1).padStart(2, '0');
+    const day = String(fechaObj.getDate()).padStart(2, '0');
+    const hours = String(fechaObj.getHours()).padStart(2, '0');
+    const minutes = String(fechaObj.getMinutes()).padStart(2, '0');
+    
+    const fechaUTC = localToUTC(`${year}-${month}-${day}`, `${hours}:${minutes}`);
+    
+    console.log(`📝 Registrando asistencia para ${codpersona} en UTC: ${fechaUTC}`);
+    
+    const response = await axios.post(
+      `${API_BASE_URL}/actividad_asistencia`,
+      {
+        codasistencia: codasistenciaExistente || 0,
+        codclub,
+        codactividad,
+        codpersona,
+        fecha: fechaUTC,  // 🔥 Enviamos UTC
+        observacion: '',
+        estado: 'A'
+      },
+      { headers: { Authorization: `Bearer ${localStorage.getItem("token")}` } }
+    );
+
+    const nuevoCodAsistencia = response.data.codasistencia;
+
+    setPersonas(prev =>
+      prev.map(p => {
+        if (p.codpersona !== codpersona) return p;
+        
+        if (tipoFecha === 'hoy') {
           return {
             ...p,
             asistencias_semana: (p.asistencias_semana || 0) + 1,
-            fecha_ult_asistencia: new Date().toISOString()
+            fecha_ult_asistencia: fechaUTC,
+            codultima_asistencia: nuevoCodAsistencia,
+            semaforo_ult_asistencia: 'V'
           };
-        })
-      );
-
-      if (expandido[codpersona]) {
-        await cargarHistorial(codpersona, 30);
-        if (modoVista[codpersona] === 'grafico') {
-          const diasActuales = diasSeleccionados[codpersona] || 90;
-          await cargarDatosGrafico(codpersona, diasActuales);
         }
+        
+        return {
+          ...p,
+          asistencias_semana: (p.asistencias_semana || 0) + 1,
+          fecha_ult_asistencia: fechaUTC
+        };
+      })
+    );
+
+    if (expandido[codpersona]) {
+      await cargarHistorial(codpersona);
+      if (modoVista[codpersona] === 'grafico') {
+        const diasActuales = diasSeleccionados[codpersona] || 90;
+        await cargarDatosGrafico(codpersona, diasActuales);
       }
-      
-      setTimeout(() => {
-        setRegistrando(prev => ({ ...prev, [codpersona]: false }));
-      }, 500);
-      
-    } catch (error) {
-      console.error("❌ Error registrando asistencia:", error);
-      setRegistrando(prev => ({ ...prev, [codpersona]: false }));
     }
-  };
-
-
+    
+    setTimeout(() => {
+      setRegistrando(prev => ({ ...prev, [codpersona]: false }));
+    }, 500);
+    
+  } catch (error) {
+    console.error("❌ Error registrando asistencia:", error);
+    setRegistrando(prev => ({ ...prev, [codpersona]: false }));
+  }
+};
 
   const getWeekRange = () => {
-  const hoy = new Date();
-
-  // copiar fecha
-  const fechaFin = new Date(hoy);
-
-  // día de la semana (0 domingo, 1 lunes…)
-  const dia = hoy.getDay();
-
-  // calcular cuánto restar para llegar al lunes
-  const diff = dia === 0 ? -6 : 1 - dia;
-
-  const fechaInicio = new Date(hoy);
-  fechaInicio.setDate(hoy.getDate() + diff);
-
-  // Formato yyyy-mm-dd para input date
-  const formato = (fecha) => fecha.toISOString().split("T")[0];
-
-  return {
-    inicio: formato(fechaInicio),
-    fin: formato(fechaFin),
+    const hoy = new Date();
+    const fechaFin = new Date(hoy);
+    const dia = hoy.getDay();
+    const diff = dia === 0 ? -6 : 1 - dia;
+    const fechaInicio = new Date(hoy);
+    fechaInicio.setDate(hoy.getDate() + diff);
+    const formato = (fecha) => fecha.toISOString().split("T")[0];
+    return {
+      inicio: formato(fechaInicio),
+      fin: formato(fechaFin),
+    };
   };
-};
 
   const cancelarAsistencia = async (codasistencia, codpersona, fechaAsistencia) => {
     const confirmacion = window.confirm(
@@ -664,7 +798,6 @@ const ActividadesJugadores = ({
     }
   };
 
-  // Filtro local
   const personasFiltradas = personas.filter(
     (p) =>
       p.nombre?.toLowerCase().includes(filtroNombre.toLowerCase()) ||
@@ -672,7 +805,7 @@ const ActividadesJugadores = ({
   );
 
   const getTextoBusqueda = () => {
-    if (filtroDebounced && filtroDebounced.trim() !== "") {  // 👈 CAMBIO
+    if (filtroDebounced && filtroDebounced.trim() !== "") {
       return `🔍 Buscando "${filtroDebounced}" en TODAS las divisiones`;
     }
     if (divisionesSeleccionadas?.length > 0) {
@@ -681,53 +814,47 @@ const ActividadesJugadores = ({
     return "⏸️ Seleccioná divisiones o escribí un nombre para buscar";
   };
 
-  /* =========================
-     RENDER
-     ========================= */
   return (
     <Wrapper>
       <Header>
-              <h3>{nombreActividad || "Actividad"}</h3>
+        <h3>{nombreActividad || "Actividad"}</h3>
+        <HeaderControls>
+          <Input
+            type="text"
+            placeholder="Buscar persona..."
+            value={filtroNombre}
+            onChange={(e) => setFiltroNombre(e.target.value)}
+          />
+          <FechasContainer>
+            <FechaInput
+              type="date"
+              value={fechaInicio}
+              onChange={(e) => setFechaInicio(e.target.value)}
+            />
+            <FechaInput
+              type="date"
+              value={fechaFin}
+              onChange={(e) => setFechaFin(e.target.value)}
+            />
+          </FechasContainer>
+          <StatsButton onClick={toggleEstadisticas}>
+            <FcStatistics size={20} />
+          </StatsButton>
+        </HeaderControls>
+      </Header>
 
-              <HeaderControls>
-                <Input
-                  type="text"
-                  placeholder="Buscar persona..."
-                  value={filtroNombre}  // 👈 CAMBIO
-                  onChange={(e) => setFiltroNombre(e.target.value)}  // 👈 CAMBIO
-                />
-
-                <FechasContainer>
-                  <FechaInput
-                    type="date"
-                    value={fechaInicio}
-                    onChange={(e) => setFechaInicio(e.target.value)}
-                  />
-                  <FechaInput
-                    type="date"
-                    value={fechaFin}
-                    onChange={(e) => setFechaFin(e.target.value)}
-                  />
-                </FechasContainer>
-
-                <StatsButton onClick={toggleEstadisticas}>
-                  <FcStatistics size={20} />
-                </StatsButton>
-              </HeaderControls>
-            </Header>
-
-            {mostrarEstadisticas && (
-              <EstadisticasAsistenciaActividades
-                fechaDesde={fechaInicio}
-                fechaHasta={fechaFin}
-                coddivisiones={divisionesSeleccionadas.map(d => d.coddivision)}
-                codactividad={codactividad}
-              />
-            )}
+      {mostrarEstadisticas && (
+        <EstadisticasAsistenciaActividades
+          fechaDesde={fechaInicio}
+          fechaHasta={fechaFin}
+          coddivisiones={divisionesSeleccionadas.map(d => d.coddivision)}
+          codactividad={codactividad}
+        />
+      )}
 
       <EstadoInfo>
         {getTextoBusqueda()}
-        {divisionesSeleccionadas?.length > 0 && !filtroDebounced && (  // 👈 CAMBIO
+        {divisionesSeleccionadas?.length > 0 && !filtroDebounced && (
           <DivisionsDetalle>
             ({divisionesSeleccionadas.map(d => d.descripcion).join(', ')})
           </DivisionsDetalle>
@@ -757,55 +884,113 @@ const ActividadesJugadores = ({
             ) : (
               personasFiltradas.map((p) => (
                 <React.Fragment key={p.codpersona}>
-                  <Fila>
-                    <DesktopView>
-                      <NombreDesktop>{p.apodo || p.nombre}</NombreDesktop>
-                      <IconoContainer>
-                        {esFechaHoy(p.fecha_ult_asistencia) && (
-                          <CgGym size={20} color="#28a745" title="Asistió hoy" />
-                        )}
-                      </IconoContainer>
-                      <DivisionDesktop>
-                        <BadgeDivision>{p.division}</BadgeDivision>
-                      </DivisionDesktop>
-                      <AsistenciasDesktop>
-                        <BadgeAsistencia valor={p.asistencias_semana || 0}>
-                          {p.asistencias_semana || 0}
-                        </BadgeAsistencia>
-                      </AsistenciasDesktop>
-                    </DesktopView>
+                  <PersonaContainer>
+                    <Fila>
+                      
+            {/* ===== DESKTOP VIEW CON SEMÁFORO ===== */}
+            <DesktopView>
+              <NombreDesktop>{p.apodo || p.nombre}</NombreDesktop>
+              
+              <IconoContainerSemaforo>
+                <IconoMancuerna
+                  onClick={() => {
+                    console.log('🔵 Click en mancuerna - persona:', p.codpersona);
+                    setMenuSemaforoAbierto(
+                      menuSemaforoAbierto === p.codpersona ? null : p.codpersona
+                    );
+                  }}
+                  tieneSemaforo={p.semaforo_ult_asistencia}
+                >
+                  {p.semaforo_ult_asistencia ? ( 
+                    <SemaforoIndicator valor={p.semaforo_ult_asistencia} Hoy/>
+                  ) : null}
+                </IconoMancuerna>
+                
+                {menuSemaforoAbierto === p.codpersona && (
+                  <MenuSemaforo
+                    onSelect={actualizarSemaforo}
+                    codpersona={p.codpersona}
+                    codasistencia={p.codultima_asistencia}
+                    onClose={() => setMenuSemaforoAbierto(null)}
+                  />
+                )}
+              </IconoContainerSemaforo>
+              
+              <DivisionDesktop>
+                <BadgeDivision>{p.division}</BadgeDivision>
+              </DivisionDesktop>
+              <AsistenciasDesktop>
+                <BadgeAsistencia valor={p.asistencias_semana || 0}>
+                  {p.asistencias_semana || 0}
+                </BadgeAsistencia>
+              </AsistenciasDesktop>
+            </DesktopView>
 
-                    <MobileView>
-                      <MobileHeader>
-                        <NombreMobile>{p.apodo || p.nombre}</NombreMobile>
-                        {esFechaHoy(p.fecha_ult_asistencia) && (
-                          <CgGym size={20} color="#28a745" title="Asistió hoy" />
-                        )}
-                      </MobileHeader>
-                      <MobileRow>
-                        <BadgeDivision>{p.division}</BadgeDivision>
-                        <BadgeAsistenciaMobile valor={p.asistencias_semana || 0}>
-                          {p.asistencias_semana || 0} sem
-                        </BadgeAsistenciaMobile>
-                      </MobileRow>
-                    </MobileView>
+            {/* ===== MOBILE VIEW CON SEMÁFORO ===== */}
+            <MobileView>
+              <MobileHeader>
+                <NombreMobile>{p.apodo || p.nombre}</NombreMobile>
+                <IconoContainerSemaforoMobile>
+                  <IconoMancuernaMobile
+                    onClick={() => {
+                      console.log('📱 Click en mancuerna móvil - persona:', p.codpersona);
+                      setMenuSemaforoAbierto(
+                        menuSemaforoAbierto === p.codpersona ? null : p.codpersona
+                      );
+                    }}
+                    tieneSemaforo={p.semaforo_ult_asistencia}
+                  >
+                    {p.semaforo_ult_asistencia ? (
+                      <SemaforoIndicatorMobile valor={p.semaforo_ult_asistencia} />
+                    ) : null}
+                  </IconoMancuernaMobile>
+                  
+                  {menuSemaforoAbierto === p.codpersona && (
+                    <MenuSemaforoMobile
+                      onSelect={actualizarSemaforo}
+                      codpersona={p.codpersona}
+                      codasistencia={p.codultima_asistencia}
+                      onClose={() => setMenuSemaforoAbierto(null)}
+                    />
+                  )}
+                </IconoContainerSemaforoMobile>
+              </MobileHeader>
+              <MobileRow>
+                <BadgeDivision>{p.division}</BadgeDivision>
+                <BadgeAsistenciaMobile valor={p.asistencias_semana || 0}>
+                  {p.asistencias_semana || 0} sem
+                </BadgeAsistenciaMobile>
+              </MobileRow>
+            </MobileView>
 
-                    <BotonesContainer>
-                      <BtnIcono 
-                        onClick={() => toggleExpandido(p.codpersona)}
-                        title="Ver historial"
-                      >
-                        <HiDotsVertical size={20} />
-                      </BtnIcono>
-                      <BtnAsistir 
-                        onClick={() => registrarAsistenciaActividad(p.codpersona)}
-                        $registrando={registrando[p.codpersona]}
-                        disabled={registrando[p.codpersona]}
-                      >
-                        {registrando[p.codpersona] ? '...' : 'Asistir'}
-                      </BtnAsistir>
-                    </BotonesContainer>
-                  </Fila>
+                      <BotonesContainer>
+                        <BotonesFila>
+                          <BtnIcono 
+                            onClick={() => toggleExpandido(p.codpersona)}
+                            title="Ver historial"
+                          >
+                            <HiDotsVertical size={20} />
+                          </BtnIcono>
+                          <BtnAsistir 
+                            onClick={() => registrarAsistenciaActividad(p.codpersona)}
+                            title="Asistir"
+                            $registrando={registrando[p.codpersona]}
+                            disabled={registrando[p.codpersona]}
+                          >
+                            {registrando[p.codpersona] ? '...' : 'Asistir'}
+                          </BtnAsistir>
+                        </BotonesFila>
+                        <FechaOpciones>
+                          <FechaBtn onClick={() => registrarAsistenciaActividad(p.codpersona, 0, 'ayer')}>
+                            Ayer
+                          </FechaBtn>
+                          <FechaBtn onClick={() => registrarAsistenciaActividad(p.codpersona, 0, 'antesDeAyer')}>
+                            Antes de Ayer
+                          </FechaBtn>
+                        </FechaOpciones>
+                      </BotonesContainer>
+                    </Fila>
+                  </PersonaContainer>
 
                   {expandido[p.codpersona] && (
                     <HistorialContainer>
@@ -881,25 +1066,105 @@ const ActividadesJugadores = ({
                           ) : historial[p.codpersona]?.length > 0 ? (
                             <>
                               <HistorialLista>
-                                {historial[p.codpersona].map((asis) => (
+                                
+                             {historial[p.codpersona].map((asis) => {
+
+                                console.log('🔍 ASIS.FECHA es de tipo:', typeof asis.fecha);
+                                console.log('🔍 ASIS.FECHA valor:', asis.fecha);
+                                  // Obtener fecha local usando el helper
+                                  const fechaLocalDate = UTCToLocal(asis.fecha, 'date');
+                                  
+                                  // 🔥 CORREGIDO: Convertir "YYYY-MM-DD HH:MM:SS" a formato ISO válido
+                                  const fechaUTC = new Date(asis.fecha.replace(' ', 'T') + 'Z');
+                                  //const diaSemana = fechaUTC.toLocaleDateString("es-AR", {
+                                   // weekday: "long"
+                                  //});
+                                  const diaSemana = new Date(asis.fecha).toLocaleDateString("es-AR", {
+                                    weekday: "long"
+                                  });
+                                  
+                                  // Parsear la fecha local para los cálculos de modificabilidad
+                                  const [dia, mes, anio] = fechaLocalDate.split('/');
+                                  const fechaAsis = new Date(anio, mes - 1, dia);
+                                  fechaAsis.setHours(0, 0, 0, 0);
+
+                                  const hoy = new Date();
+                                  hoy.setHours(0, 0, 0, 0);
+                                  const ayer = new Date(hoy);
+                                  ayer.setDate(ayer.getDate() - 1);
+                                  const antesdeayer = new Date(hoy);
+                                  antesdeayer.setDate(antesdeayer.getDate() - 2);
+
+                                  const esModificable = 
+                                    fechaAsis.getTime() === hoy.getTime() ||
+                                    fechaAsis.getTime() === ayer.getTime() ||
+                                    fechaAsis.getTime() === antesdeayer.getTime();
+                                
+                                return (
                                   <HistorialItem key={asis.codasistencia}>
                                     <HistorialFecha>
-                                      {getDiaEnEspanol(asis.dia_semana)} {asis.fecha}
-                                    </HistorialFecha>
-                                    <HistorialAcciones>
-                                      <HistorialCheck>✅</HistorialCheck>
-                                      <BtnCancelarHistorial
-                                        onClick={() => cancelarAsistencia(
-                                          asis.codasistencia, 
-                                          p.codpersona,
-                                          asis.fecha
-                                        )}
-                                      >
-                                        Cancelar
-                                      </BtnCancelarHistorial>
-                                    </HistorialAcciones>
-                                  </HistorialItem>
-                                ))}
+                                          {diaSemana} {fechaLocalDate}
+                                        </HistorialFecha>
+                                          
+                                          {/* Contenedor del semáforo - SOLO EL CÍRCULO */}
+                                          <HistorialSemaforoContainer>
+                                            {/* El círculo de color - AHORA ABRE EL MENÚ */}
+                                            {asis.semaforo && (
+                                             // Reemplazá TODO el bloque del círculo con esto:
+
+                                              <SemaforoHistorialButton
+                                                valor={asis.semaforo}
+                                                esModificable={esModificable}
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  console.log('🔴 CLICK EN CÍRCULO - código:', asis.codasistencia);
+                                                  console.log('🔴 esModificable:', esModificable);
+                                                  
+                                                  if (esModificable) {
+                                                    // Si es modificable, abrimos el menú
+                                                    setMenuSemaforoAbierto(
+                                                      menuSemaforoAbierto === asis.codasistencia ? null : asis.codasistencia
+                                                    );
+                                                  } else {
+                                                    // Si NO es modificable, mostramos un aviso
+                                                    alert(`⚠️ No se puede modificar el color de asistencias anteriores a ${antesdeayer.toLocaleDateString('es-AR')}`);
+                                                  }
+                                                }}
+                                                title={esModificable ? "Cambiar color" : "No se puede modificar"}
+                                              />
+                                            )}
+                                            
+                                            {/* Menú del semáforo */}
+                                            {menuSemaforoAbierto === asis.codasistencia && (
+                                              <MenuSemaforoHistorial
+                                                onSelect={(codpersona, codasistencia, valor) => {
+                                                  console.log('🟢 MENÚ SELECCIONADO:', { codpersona, codasistencia, valor });
+                                                  actualizarSemaforoHistorial(codpersona, codasistencia, valor);
+                                                  setMenuSemaforoAbierto(null);
+                                                }}
+                                                codpersona={p.codpersona}
+                                                codasistencia={asis.codasistencia}
+                                                onClose={() => setMenuSemaforoAbierto(null)}
+                                              />
+                                            )}
+                                          </HistorialSemaforoContainer>
+                                          
+                                          {/* Check y botón cancelar */}
+                                          <HistorialAcciones>
+                                            <HistorialCheck>✅</HistorialCheck>
+                                            <BtnCancelarHistorial
+                                              onClick={() => cancelarAsistencia(
+                                                asis.codasistencia, 
+                                                p.codpersona,
+                                                asis.fecha
+                                              )}
+                                            >
+                                              Cancelar
+                                            </BtnCancelarHistorial>
+                                          </HistorialAcciones>
+                                        </HistorialItem>
+                                      );
+                                    })}
                               </HistorialLista>
                               <HistorialTotal>
                                 Total: {historial[p.codpersona].length || 0}
@@ -953,7 +1218,6 @@ const Wrapper = styled.div`
   overflow-x: hidden;
 `;
 
-
 const HeaderControls = styled.div`
   display: flex;
   align-items: center;
@@ -965,6 +1229,7 @@ const HeaderControls = styled.div`
     gap: 8px;
   }
 `;
+
 const Header = styled.div`
   display: flex;
   flex-direction: column;
@@ -975,26 +1240,14 @@ const Header = styled.div`
   @media (min-width: 769px) {
     flex-direction: row;
     align-items: center;
-    justify-content: flex-start;   /* 👈 CAMBIO */
-    gap: 20px;                     /* espacio entre título y controles */
+    justify-content: flex-start;
+    gap: 20px;
   }
 
   h3 {
     margin: 0;
     font-size: 18px;
     color: #1d3557;
-  }
-`;
-const HeaderRight = styled.div`
-  display: flex;
-  gap: 8px;
-  width: 100%;
-  
-  @media (min-width: 769px) {
-    flex: 1;
-    justify-content: center;
-    max-width: 600px;
-    margin: 0 auto;
   }
 `;
 
@@ -1236,12 +1489,9 @@ const BadgeAsistenciaMobile = styled(BadgeAsistencia)`
 
 const BotonesContainer = styled.div`
   display: flex;
+  flex-direction: column;
+  align-items: flex-end;
   gap: 4px;
-  margin-left: 4px;
-  
-  @media (max-width: 768px) {
-    gap: 2px;
-  }
 `;
 
 const BtnIcono = styled.button`
@@ -1457,42 +1707,9 @@ const HistorialLista = styled.div`
   margin-bottom: 12px;
 `;
 
-const HistorialItem = styled.div`
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 10px;
-  background: white;
-  border-radius: 6px;
-  font-size: 14px;
-  
-  @media (max-width: 768px) {
-    padding: 8px;
-    font-size: 13px;
-    flex-wrap: wrap;
-    gap: 8px;
-  }
-`;
 
-const HistorialFecha = styled.span`
-  color: #333;
-  text-transform: capitalize;
-  font-weight: 500;
-`;
 
-const HistorialAcciones = styled.div`
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  
-  @media (max-width: 768px) {
-    gap: 8px;
-  }
-`;
 
-const HistorialCheck = styled.span`
-  font-size: 16px;
-`;
 
 const BtnCancelarHistorial = styled.button`
   background: #dc3545;
@@ -1620,13 +1837,6 @@ const PeriodoInfo = styled.div`
   border-radius: 12px;
 `;
 
-
-const ButtonText = styled.span`
-  font-size: 14px;
-  font-weight: 500;
-`;
-
-
 const FechasContainer = styled.div`
   display: flex;
   gap: 6px;
@@ -1670,5 +1880,376 @@ const FechaInput = styled.input`
     outline: none;
     border-color: #80bdff;
     box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+  }
+`;
+
+const FechaOpciones = styled.div`
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+`;
+
+const FechaBtn = styled.button`
+  background: #007bff;
+  color: white;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+
+  &:hover {
+    background: #0056b3;
+  }
+`;
+
+const PersonaContainer = styled.div`
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  gap: 8px;
+`;
+
+const BotonesFila = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+`;
+
+// ===== VERSIÓN MEJORADA DE LOS CIRCULOS =====
+const IconoContainerSemaforoMobile = styled.div`
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-left: 8px;
+`;
+
+const IconoMancuernaMobile = styled.button`
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 8px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  transition: all 0.2s ease;
+  
+  &:hover {
+    background: ${props => props.tieneSemaforo ? 'rgba(0,0,0,0.05)' : '#f0f0f0'};
+    transform: scale(1.05);
+  }
+  
+  &:active {
+    transform: scale(0.95);
+  }
+`;
+
+const SemaforoIndicatorMobile = styled.div`
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: ${props => {
+    switch(props.valor) {
+      case 'V': return 'linear-gradient(135deg, #28a745, #20c997)';
+      case 'A': return 'linear-gradient(135deg, #ffc107, #fd7e14)';
+      case 'R': return 'linear-gradient(135deg, #dc3545, #c82333)';
+      default: return '#999';
+    }
+  }};
+  box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+  border: 2px solid white;
+  transition: all 0.3s ease;
+  
+  &:hover {
+    transform: scale(1.1);
+    box-shadow: 0 6px 15px rgba(0,0,0,0.3);
+  }
+`;
+
+const MenuSemaforoMobile = styled(MenuSemaforo)`
+  right: -10px;
+  
+  @media (max-width: 480px) {
+    right: -5px;
+    
+    button {
+      width: 45px;
+      height: 45px;
+      font-size: 22px;
+    }
+  }
+`;
+
+// Versión desktop mejorada
+const IconoContainerSemaforo = styled.div`
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 40px;
+`;
+
+const IconoMancuerna = styled.button`
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 8px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  transition: all 0.2s ease;
+  
+  &:hover {
+    background: ${props => props.tieneSemaforo ? 'rgba(0,0,0,0.05)' : '#f0f0f0'};
+    transform: scale(1.05);
+  }
+  
+  &:active {
+    transform: scale(0.95);
+  }
+`;
+
+const SemaforoIndicator = styled.div`
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: ${props => {
+    switch(props.valor) {
+      case 'V': return 'linear-gradient(135deg, #28a745, #20c997)';
+      case 'A': return 'linear-gradient(135deg, #ffc107, #fd7e14)';
+      case 'R': return 'linear-gradient(135deg, #dc3545, #c82333)';
+      default: return '#999';
+    }
+  }};
+  box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+  border: 2px solid white;
+  transition: all 0.3s ease;
+  
+  &:hover {
+    transform: scale(1.1);
+    box-shadow: 0 6px 15px rgba(0,0,0,0.3);
+  }
+`;
+
+// Menú desktop mejorado
+const MenuContainerSemaforo = styled.div`
+  position: absolute;
+  top: 100%;
+  right: 0;
+  background: white;
+  border-radius: 50px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+  padding: 12px;
+  display: flex;
+  gap: 12px;
+  z-index: 1000;
+  margin-top: 8px;
+  border: 1px solid rgba(0,0,0,0.1);
+  backdrop-filter: blur(10px);
+  background: rgba(255,255,255,0.95);
+  
+  @media (max-width: 768px) {
+    padding: 10px;
+    gap: 10px;
+    right: -10px;
+  }
+`;
+
+const OpcionSemaforo = styled.button`
+  background: ${props => props.color};
+  border: none;
+  width: 45px;
+  height: 45px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.15);
+  border: 2px solid white;
+  
+  &:hover {
+    transform: scale(1.15) rotate(5deg);
+    box-shadow: 0 8px 25px rgba(0,0,0,0.25);
+  }
+  
+  &:active {
+    transform: scale(0.95);
+  }
+  
+  @media (max-width: 768px) {
+    width: 50px;
+    height: 50px;
+    font-size: 24px;
+  }
+`;
+
+
+
+
+const HistorialFecha = styled.span`
+  color: #333;
+  text-transform: capitalize;
+  font-weight: 500;
+  white-space: nowrap;
+`;
+
+
+
+const SemaforoHistorial = styled.div`
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: ${props => {
+    switch(props.valor) {
+      case 'V': return 'linear-gradient(135deg, #28a745, #20c997)';
+      case 'A': return 'linear-gradient(135deg, #ffc107, #fd7e14)';
+      case 'R': return 'linear-gradient(135deg, #dc3545, #c82333)';
+      default: return '#999';
+    }
+  }};
+  box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+  border: 2px solid white;
+  opacity: ${props => props.esModificable ? 1 : 0.5};
+  cursor: ${props => props.esModificable ? 'pointer' : 'default'};
+  transition: transform 0.2s;
+  
+  &:hover {
+    transform: ${props => props.esModificable ? 'scale(1.1)' : 'none'};
+  }
+`;
+
+const BtnSemaforoHistorial = styled.button`
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #666;
+  min-width: 28px;
+  min-height: 28px;
+  
+  &:hover {
+    background: #f0f0f0;
+    color: #333;
+  }
+`;
+
+const HistorialAcciones = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  justify-content: flex-end;
+  
+  @media (max-width: 768px) {
+    gap: 8px;
+  }
+`;
+
+const HistorialCheck = styled.span`
+  font-size: 16px;
+  min-width: 20px;
+  text-align: center;
+`;
+
+
+
+
+
+
+
+
+
+
+// Ajusta el contenedor del semáforo
+const HistorialSemaforoContainer = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative; /* ¡CRUCIAL para que el menú se posicione! */
+  min-width: 40px;
+  
+  @media (max-width: 768px) {
+    justify-content: flex-end;
+  }
+`;
+
+// Ajusta el botón del círculo
+const SemaforoHistorialButton = styled.button`
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2px solid white;
+  padding: 0;
+  cursor: pointer;  /* Siempre pointer */
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+  
+  background: ${props => {
+    switch(props.valor) {
+      case 'V': return 'linear-gradient(135deg, #28a745, #20c997)';
+      case 'A': return 'linear-gradient(135deg, #ffc107, #fd7e14)';
+      case 'R': return 'linear-gradient(135deg, #dc3545, #c82333)';
+      default: return '#999';
+    }
+  }};
+  
+  /* El hover solo da feedback visual, pero no cambia el cursor */
+  &:hover {
+    transform: scale(1.1);
+    box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+  }
+  
+  &:active {
+    transform: scale(0.95);
+  }
+`;
+
+// Ajusta el menú para que aparezca centrado debajo del círculo
+const MenuSemaforoHistorial = styled(MenuSemaforo)`
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-top: 8px;
+  z-index: 1002;
+  
+  @media (max-width: 768px) {
+    left: auto;
+    right: 0;
+    transform: none;
+  }
+`;
+
+// Ajusta las columnas del grid
+const HistorialItem = styled.div`
+  display: grid;
+  grid-template-columns: 200px 80px 120px; /* Segunda columna más angosta para el círculo */
+  align-items: center;
+  padding: 10px;
+  background: white;
+  border-radius: 6px;
+  font-size: 14px;
+  gap: 10px;
+  
+  @media (max-width: 768px) {
+    grid-template-columns: 1fr 60px 100px;
+    padding: 8px;
+    font-size: 13px;
+    gap: 8px;
   }
 `;

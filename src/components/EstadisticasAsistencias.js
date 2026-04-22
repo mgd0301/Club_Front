@@ -11,6 +11,7 @@ import {
   Tooltip,
   ResponsiveContainer
 } from "recharts";
+import { localToUTC, UTCToLocal } from "../utils/helpers";
 
 const EstadisticasAsistencias = ({
   fechaDesde,
@@ -21,15 +22,16 @@ const EstadisticasAsistencias = ({
   const [loading, setLoading] = useState(false);
   const [mostrarDetalle, setMostrarDetalle] = useState(true);
   const [buscarpersona, setBuscarPersona] = useState("");
+  const [modoCalculo, setModoCalculo] = useState("REAL");
 
   // DEBUG: Ver qué datos estamos recibiendo
   console.log("=== EstadisticasAsistencias ===");
-  console.log("fechaDesde:", fechaDesde);
-  console.log("fechaHasta:", fechaHasta);
-  console.log("coddivisiones:", coddivisiones);
-  console.log("Es array?", Array.isArray(coddivisiones));
-  console.log("Cantidad:", coddivisiones?.length || 0);
-  console.log("==============================");
+//  console.log("fechaDesde:", fechaDesde);
+  //console.log("fechaHasta:", fechaHasta);
+  //console.log("coddivisiones:", coddivisiones);
+  //console.log("Es array?", Array.isArray(coddivisiones));
+  //console.log("Cantidad:", coddivisiones?.length || 0);
+  //console.log("==============================");
 
   useEffect(() => {
     // Validar que tengamos todos los datos necesarios
@@ -53,17 +55,24 @@ const EstadisticasAsistencias = ({
       }
 
       setLoading(true);
+
+      const fecha_desde = localToUTC(fechaDesde, "00:00:00");
+      const fecha_hasta = localToUTC(fechaHasta, "23:59:59");            
+
       console.log("Enviando al backend:", {
-        fecha_desde: fechaDesde.replaceAll("-", "") + "000000",
-        fecha_hasta: fechaHasta.replaceAll("-", "") + "235959",
+        fecha_desde: fecha_desde,
+        fecha_hasta: fecha_hasta,
         coddivisiones: coddivisiones  // ← array completo, no solo el primero
       });
 
+
+
+      console.log("asistencias_divisiones...");
       const resp = await axios.post(
         `${API_BASE_URL}/asistencias_divisiones`,
         {
-          fecha_desde: fechaDesde.replaceAll("-", "") + "000000",
-          fecha_hasta: fechaHasta.replaceAll("-", "") + "235959",
+          fecha_desde: fecha_desde,
+          fecha_hasta: fecha_hasta,
           coddivisiones: coddivisiones  // ← ENVIAMOS EL ARRAY COMPLETO
         },
         {
@@ -71,8 +80,9 @@ const EstadisticasAsistencias = ({
         }
       );
       
-      console.log("Estadísticas recibidas. Registros:", resp.data?.length || 0);
+      //console.log("Estadísticas recibidas. Registros:", resp.data?.length || 0);
       setRows(resp.data || []);
+      console.log("rows:", rows);
       
     } catch (err) {
       console.error("Error cargando estadísticas:", err);
@@ -85,7 +95,15 @@ const EstadisticasAsistencias = ({
     }
   };
 
-  const jugadores = useMemo(() => agruparPorJugador(rows), [rows]);
+  const jugadores = useMemo(() => {
+  const base = agruparPorJugador(rows);
+
+  return base.map(j => ({
+    ...j,
+    porcentaje: calcularPorcentaje(j, modoCalculo)
+  }));
+}, [rows, modoCalculo]);
+
 
   const ranking = useMemo(() => [...jugadores].sort((a, b) => b.porcentaje - a.porcentaje), [jugadores]);
 
@@ -93,6 +111,7 @@ const EstadisticasAsistencias = ({
   <Container>
     <Header>
       <h3>📊 Estadísticas de Asistencia</h3>
+      <h3 style={{ color: 'red' }}>Solo eventos Finalizados</h3>
       {coddivisiones && coddivisiones.length > 0 && (
         <Subtitle>
           Mostrando datos para {coddivisiones.length} división(es) seleccionada(s)
@@ -182,6 +201,29 @@ const EstadisticasAsistencias = ({
                   value={buscarpersona}
                   onChange={e => setBuscarPersona(e.target.value)}
                 />
+                <select
+                  value={modoCalculo}
+                  onChange={(e) => setModoCalculo(e.target.value)}
+                  style={{
+                    padding: "6px 10px",
+                    borderRadius: "6px",
+                    border: "1px solid #ccc"
+                  }}
+                >
+                  <option value="ESTRICTO">Solo presentes (P)</option>
+                  <option value="REAL">Presentes + PN</option>
+                  <option value="PONDERADO">Ponderado</option>
+                </select>
+
+
+                <Subtitle>
+                  Modo: {
+                    modoCalculo === "ESTRICTO" ? "Solo presentes" :
+                    modoCalculo === "REAL" ? "Presentes + PN" :
+                    "Ponderado"
+                  }
+                </Subtitle>
+
               </div>
             </SectionHeader>
 
@@ -272,7 +314,7 @@ const agruparPorJugador = (rows) => {
 
   // Calculamos el porcentaje de asistencia P sobre el total de registros del jugador
   Object.values(map).forEach(j => {
-    j.porcentaje = j.total ? Math.round((j.P / j.total) * 100) : 0;
+    j.porcentaje = 0; //calculamos despues
   });
 
   return Object.values(map);
@@ -283,6 +325,31 @@ const promedioAsistencia = (jugadores) => {
   const total = jugadores.reduce((acc, j) => acc + j.porcentaje, 0);
   return Math.round(total / jugadores.length);
 };
+
+const calcularPorcentaje = (j, modo) => {
+  if (!j.total) return 0;
+
+  switch (modo) {
+    case "ESTRICTO":
+      return Math.round((j.P / j.total) * 100);
+
+    case "REAL":
+      return Math.round(((j.P + j.PN) / j.total) * 100);
+
+    case "PONDERADO":
+      const puntos =
+        j.P * 1 +
+        j.PN * 1 +
+        j.AA * 0.5 +
+        j.A * 0;
+
+      return Math.round((puntos / j.total) * 100);
+
+    default:
+      return 0;
+  }
+};
+
 
 /* ======================================================
    Styles

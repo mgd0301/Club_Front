@@ -4,6 +4,9 @@ import Auth from './components/Auth/Auth';
 import Dashboard from './pages/Dashboard';
 import Evento from './pages/Evento';
 import Registrar from './pages/Registrar';
+import Persona  from './pages/Persona';
+import PersonasAdministrar from './pages/PersonasAdministrar';
+
 import { useContext } from 'react';
 
 const IndexRoute = () => {
@@ -54,6 +57,24 @@ function App() {
             }
           />
 
+          <Route
+            path="/persona"
+            element={
+              <ProtectedRoute>
+                <Persona />
+              </ProtectedRoute>
+            }
+          />
+
+        <Route
+          path="/admin-personas" // 👈 Cambia de /PersonasAdministrar a /admin-personas
+          element={
+            <ProtectedRoute>
+              <PersonasAdministrar />
+            </ProtectedRoute>
+          }
+        />
+      
 
         </Routes>
       </Router>

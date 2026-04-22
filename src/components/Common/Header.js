@@ -15,7 +15,12 @@ const AppHeader = () => {
     setCurrentUser,
     currentDisciplina,
     setCurrentDisciplina,
+    seccionActiva,
+    setSeccionActiva,
+    // 👇 IMPORTAR del contexto
+    setDivisionesSeleccionadas
   } = useContext(AuthContext);
+  
   const [clubes, setClubes] = useState([]);
   const [disciplinas, setDisciplinas] = useState([]);
   const navigate = useNavigate();
@@ -35,7 +40,6 @@ const AppHeader = () => {
           }
         );
         setClubes(resp.data);
-        // Si solo hay 1 club → auto-selección
         if (resp.data.length === 1) {
           setCurrentClub(resp.data[0]);
         }
@@ -60,7 +64,6 @@ const AppHeader = () => {
           }
         );
         setDisciplinas(resp.data);
-        // Si solo hay 1 → autoseleccionar
         if (resp.data.length === 1) {
           setCurrentDisciplina(resp.data[0]);
         }
@@ -71,6 +74,29 @@ const AppHeader = () => {
     fetchDisciplinas();
   }, [currentClub]);
 
+  // 👇 Función para manejar cambio de club
+  const handleClubChange = (e) => {
+    const clubSel = clubes.find((c) => c.codclub == e.target.value);
+    setCurrentClub(clubSel);
+    // 👇 IMPORTANTE: Limpiar divisiones seleccionadas al cambiar club
+    setDivisionesSeleccionadas([]);
+    console.log("Club cambiado a:", clubSel?.codclub, "divisiones limpiadas");
+  };
+
+const handleAdminClick = () => {
+  setSeccionActiva("admin_personas");
+  navigate("/admin-personas"); // 👈 Debe coincidir con la ruta en App.js
+};
+
+  const handleVolverClick = () => {
+    setSeccionActiva("inicio");
+    navigate("/dashboard");
+  };
+
+  const esAdmin = () => {
+    return currentUser?.tipo_usuario === 1;
+  };
+
   return (
     <HeaderContainer>
       {/* PRIMERA FILA (móvil): Usuario + Cerrar sesión */}
@@ -79,45 +105,59 @@ const AppHeader = () => {
           {currentUser?.photoURL && (
             <Avatar src={currentUser.photoURL} alt={currentUser.persona} />
           )}
-          {/*<UserName>{currentUser?.apodo || currentUser?.nombre}</UserName>*/}
-         <UserName>
-  {currentUser ? (
-    currentUser.apodo && 
-    typeof currentUser.apodo === 'string' && 
-    currentUser.apodo.trim() 
-      ? currentUser.apodo 
-      : currentUser.nombre || ''
-  ) : ''}
-</UserName>
+          <UserName>
+            {currentUser ? (
+              currentUser.apodo && 
+              typeof currentUser.apodo === 'string' && 
+              currentUser.apodo.trim() 
+                ? currentUser.apodo 
+                : currentUser.nombre || ''
+            ) : ''}
+          </UserName>
         </UserInfo>
         <LogoutButton
-          onClick={() => {
-            localStorage.removeItem("token");
-            setCurrentUser(null);
-            setCurrentClub(null);
-            navigate("/");
-          }}
+
+
+                  onClick={async () => {
+                    try {
+                      await axios.post(
+                        `${API_BASE_URL}/logout`,
+                        {},
+                        {
+                          headers: {
+                            Authorization: `Bearer ${localStorage.getItem("token")}`,
+                          },
+                        }
+                      );
+                    } catch (err) {
+                      console.error("Error en logout:", err);
+                    }
+
+                    localStorage.removeItem("token");
+                    setCurrentUser(null);
+                    setCurrentClub(null);
+                    setCurrentDisciplina(null);
+                    setSeccionActiva("inicio");
+                    setDivisionesSeleccionadas([]);
+                    navigate("/");
+                  }}
+                    
         >
           Cerrar sesión
         </LogoutButton>
       </TopRow>
 
-      {/* SEGUNDA FILA (móvil): Logo + Selects */}
+      {/* SEGUNDA FILA (móvil): Logo + Selects + Botones Admin */}
       <BottomRow>
-        {/* Logo solo visible en desktop */}
         <DesktopLogo>
           <AppNombre>ClubIp</AppNombre>
           <MdOutlineSportsRugby size={30} color="#1877f2" />
         </DesktopLogo>
 
-        {/* Contenedor de selects */}
         <SelectsContainer>
           <SelectClub
             value={currentClub?.codclub || ""}
-            onChange={(e) => {
-              const clubSel = clubes.find((c) => c.codclub == e.target.value);
-              setCurrentClub(clubSel);
-            }}
+            onChange={handleClubChange} // 👈 Usar la nueva función
           >
             <option value="" disabled>
               Seleccionar club...
@@ -147,6 +187,24 @@ const AppHeader = () => {
               </option>
             ))}
           </SelectDisciplina>
+
+          <AdminButtonsContainer>
+            {esAdmin() && (
+              <AdminButton 
+                onClick={handleAdminClick}
+                title="Adminsitrar Personas"
+                active={seccionActiva === "admin_personas"}
+              >
+                ⚙ 
+              </AdminButton>
+            )}
+            
+            {/*seccionActiva === "admin_personas" && (
+              <VolverButton onClick={handleVolverClick}>
+                ← Volver al Dashboard
+              </VolverButton>
+            )*/}
+          </AdminButtonsContainer>
         </SelectsContainer>
       </BottomRow>
     </HeaderContainer>
@@ -235,6 +293,16 @@ const SelectsContainer = styled.div`
   }
 `;
 
+const AdminButtonsContainer = styled.div`
+  display: flex;
+  gap: 0.8rem;
+  align-items: center;
+  
+  @media (min-width: 769px) {
+    margin-left: 10px;
+  }
+`;
+
 const AppNombre = styled.strong`
   font-size: 2.2rem;
   font-weight: 700;
@@ -320,11 +388,11 @@ const Avatar = styled.img`
 const UserName = styled.span`
   font-weight: 500;
   color: #34495e;
-  font-size: 1.95rem;
+  font-size: 1.15rem;
   margin-right: 15px;
 
   @media (max-width: 480px) {
-    font-size: 1.85rem;
+    font-size: 1rem;
     max-width: 150px;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -352,5 +420,60 @@ const LogoutButton = styled.button`
   @media (max-width: 480px) {
     padding: 5px 12px;
     font-size: 0.85rem;
+  }
+`;
+
+// Estilos para los botones de admin
+const AdminButton = styled.button`
+  padding: 8px 16px;
+  background: ${props => props.active ? '#3498db' : '#2c3e50'};
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.9rem;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+
+  &:hover {
+    background: ${props => props.active ? '#2980b9' : '#34495e'};
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  }
+
+  &:active {
+    transform: translateY(0);
+  }
+
+  @media (max-width: 768px) {
+    width: 100%;
+  }
+`;
+
+const VolverButton = styled.button`
+  padding: 8px 16px;
+  background: #95a5a6;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.9rem;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+
+  &:hover {
+    background: #7f8c8d;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  }
+
+  &:active {
+    transform: translateY(0);
+  }
+
+  @media (max-width: 768px) {
+    width: 100%;
   }
 `;

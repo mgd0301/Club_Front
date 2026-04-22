@@ -1,3 +1,4 @@
+// AuthContext.js
 import React, { createContext, useState, useEffect } from 'react';
 
 export const AuthContext = createContext();
@@ -5,9 +6,13 @@ export const AuthContext = createContext();
 export const AuthProvider = ({ children }) => {
   const [currentUser, setCurrentUser] = useState(null);
   const [loading, setLoading] = useState(true);
-
   const [currentClub, setCurrentClub] = useState(null);
   const [currentDisciplina, setCurrentDisciplina] = useState(null);
+  const [seccionActiva, setSeccionActiva] = useState("inicio");
+  const [personasDivision, setPersonasDivision] = useState([]);
+  
+  // 👇 NUEVO: Agregar divisiones seleccionadas al contexto
+  const [divisionesSeleccionadas, setDivisionesSeleccionadas] = useState([]);
 
   useEffect(() => {
     const token = localStorage.getItem('token');
@@ -26,6 +31,9 @@ export const AuthProvider = ({ children }) => {
     setCurrentUser(null);
     setCurrentClub(null);
     setCurrentDisciplina(null);
+    setSeccionActiva("inicio");
+    setPersonasDivision([]);
+    setDivisionesSeleccionadas([]); // 👈 Limpiar también
     localStorage.removeItem('token');
     localStorage.removeItem('currentUser');
   };
@@ -40,7 +48,14 @@ export const AuthProvider = ({ children }) => {
         setCurrentClub,
         currentDisciplina,
         setCurrentDisciplina,
-        logout
+        logout,
+        seccionActiva,
+        setSeccionActiva,
+        personasDivision,
+        setPersonasDivision,
+        // 👇 EXPORTAR los nuevos valores
+        divisionesSeleccionadas,
+        setDivisionesSeleccionadas
       }}
     >
       {children}
