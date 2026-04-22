@@ -24,14 +24,7 @@ const EstadisticasAsistenciaActividades = ({
   const [mostrarDetalle, setMostrarDetalle] = useState(true);
   const [buscarpersona, setBuscarPersona] = useState("");
 
-  // DEBUG: Ver qué datos estamos recibiendo
-  console.log("=== EstadisticasAsistencias ===");
-  console.log("fechaDesde:", fechaDesde);
-  console.log("fechaHasta:", fechaHasta);
-  console.log("coddivisiones:", coddivisiones);
-  console.log("codactividad:", codactividad);
-  console.log("esperado:", esperado);
-  console.log("==============================");
+  
 
 
 
@@ -87,12 +80,8 @@ const EstadisticasAsistenciaActividades = ({
       requestBody.coddivisiones = coddivisiones;
     }
 
-    console.log("📅 Fechas ORIGINALES:", { fechaDesde, fechaHasta });
-    console.log("📅 Fechas FORMATEADAS:", { 
-      fecha_desde: fechaDesdeFormateada, 
-      fecha_hasta: fechaHastaFormateada 
-    });
-    console.log("Enviando al backend historial_asistencia_actividades:", requestBody);
+    
+    
 
     const resp = await axios.post(
       `${API_BASE_URL}/historial_asistencia_actividades`,
@@ -102,11 +91,16 @@ const EstadisticasAsistenciaActividades = ({
       }
     );
     
-    console.log("Respuesta del servidor:", resp.data);
+    //console.log("Respuesta del servidor:", resp.data);
     setData(resp.data);
+
+
+
+    
+
     
   } catch (err) {
-    console.error("Error cargando estadísticas:", err);
+    //console.error("Error cargando estadísticas:", err);
     if (err.response) {
       console.error("Error del servidor:", err.response.data);
     }
@@ -116,8 +110,18 @@ const EstadisticasAsistenciaActividades = ({
   }
 };
 
+useEffect(() => {
+  if (data?.detalle && data.detalle.length > 0) {
+    console.log("=== VER ESTRUCTURA REAL DEL BACKEND ===");
+    const primerItem = data.detalle[0];
+    console.log("Item COMPLETO:", JSON.stringify(primerItem, null, 2));
+    console.log("Todas las propiedades:", Object.keys(primerItem));
+    console.log("========================================");
+  }
+}, [data]);
+
   // Procesar los datos para el ranking por jugador
-  const jugadores = useMemo(() => {
+  const jugadoresOld = useMemo(() => {
     if (!data?.detalle) return [];
     
     const map = {};
@@ -158,6 +162,88 @@ const EstadisticasAsistenciaActividades = ({
     return Object.values(map);
   }, [data]);
 
+
+
+
+
+const jugadores = useMemo(() => {
+  if (!data?.detalle || !Array.isArray(data.detalle)) return [];
+  
+  // Calcular número de semanas en el rango
+  const getNumeroSemanas = (desde, hasta) => {
+    const start = new Date(desde);
+    const end = new Date(hasta);
+    const diffTime = Math.abs(end - start);
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    return Math.ceil(diffDays / 7);
+  };
+  
+  const totalSemanas = getNumeroSemanas(fechaDesde, fechaHasta);
+  console.log("Total semanas en el rango:", totalSemanas);
+  
+  // Agrupar asistencias por jugador y semana (usando índice de semana)
+  const asistenciasPorJugador = new Map();
+  
+  data.detalle.forEach(item => {
+    if (!item?.codpersona) return;
+    
+    const fecha = new Date(item.fecha);
+    const semanaIndex = Math.floor((fecha - new Date(fechaDesde)) / (7 * 24 * 60 * 60 * 1000));
+    
+    if (!asistenciasPorJugador.has(item.codpersona)) {
+      asistenciasPorJugador.set(item.codpersona, {
+        codpersona: item.codpersona,
+        nombre: item.nombre || `Jugador ${item.codpersona}`,
+        division: item.coddivision || 'Sin división',
+        asistenciasPorSemana: new Array(totalSemanas).fill(0)
+      });
+    }
+    
+    const jugador = asistenciasPorJugador.get(item.codpersona);
+    if (semanaIndex >= 0 && semanaIndex < totalSemanas) {
+      jugador.asistenciasPorSemana[semanaIndex]++;
+    }
+  });
+  
+  // Construir resultado
+  const resultado = Array.from(asistenciasPorJugador.values()).map(jugador => {
+    let total_asistencias = 0;
+    const semanasDetalle = [];
+    
+    for (let i = 0; i < totalSemanas; i++) {
+      const asistencias = jugador.asistenciasPorSemana[i];
+      total_asistencias += asistencias;
+      
+      semanasDetalle.push({
+        semana: `Semana ${i + 1}`,
+        asistencias: asistencias,
+        esperado: esperado,
+        porcentaje: Math.round((asistencias / esperado) * 100)
+      });
+    }
+    
+    const total_esperado = totalSemanas * esperado;
+    const porcentajeGlobal = total_esperado > 0 
+      ? Math.round((total_asistencias / total_esperado) * 100) 
+      : 0;
+    
+    return {
+      codpersona: jugador.codpersona,
+      nombre: jugador.nombre,
+      division: jugador.division,
+      total_asistencias: total_asistencias,
+      total_esperado: total_esperado,
+      semanas: semanasDetalle,
+      porcentaje: porcentajeGlobal
+    };
+  });
+  
+  console.log("Jugadores procesados con todas las semanas:", resultado.length);
+  console.log("Ejemplo de jugador:", resultado[0]);
+  
+  return resultado;
+}, [data, esperado, fechaDesde, fechaHasta]); // ← CORREGIDO: fechaHasta
+
   const ranking = useMemo(() => 
     [...jugadores].sort((a, b) => b.porcentaje - a.porcentaje), 
     [jugadores]
@@ -170,12 +256,22 @@ const EstadisticasAsistenciaActividades = ({
     return Math.round(total / jugadores.length);
   }, [jugadores]);
 
-  // Filtrar jugadores por búsqueda
-  const jugadoresFiltrados = useMemo(() => {
-    return ranking.filter(j => 
-      j.nombre.toLowerCase().includes(buscarpersona.toLowerCase())
-    );
-  }, [ranking, buscarpersona]);
+  
+
+const jugadoresFiltrados = useMemo(() => {
+  if (!Array.isArray(ranking)) return [];
+  
+  // Si no hay búsqueda, mostrar todos
+  if (!buscarpersona || buscarpersona.trim() === "") {
+    return ranking;
+  }
+  
+  // Si hay búsqueda, filtrar
+  return ranking.filter(j => {
+    if (!j || !j.nombre) return false;
+    return j.nombre.toLowerCase().includes(buscarpersona.toLowerCase());
+  });
+}, [ranking, buscarpersona]);
 
   if (!fechaDesde || !fechaHasta || !codactividad) {
     return (
