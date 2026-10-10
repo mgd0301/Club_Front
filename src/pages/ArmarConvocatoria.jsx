@@ -50,11 +50,18 @@ const ArmarConvocatoria = () => {
 
   const marcar = (codpersona, convocatoria) => {
     if (soloLectura) return;
-    setJugadores((prev) =>
-      prev.map((j) =>
-        j.codpersona === codpersona ? { ...j, convocatoria } : j
-      )
-    );
+    setJugadores((prev) => {
+      let nuevoOrden = null;
+      if (convocatoria === "T" || convocatoria === "S") {
+        const maxOrden = prev
+          .filter((j) => j.convocatoria === convocatoria)
+          .reduce((max, j) => Math.max(max, j.orden || 0), 0);
+        nuevoOrden = maxOrden + 1;
+      }
+      return prev.map((j) =>
+        j.codpersona === codpersona ? { ...j, convocatoria, orden: nuevoOrden } : j
+      );
+    });
   };
 
   const quitar = (codpersona) => marcar(codpersona, null);
@@ -78,7 +85,7 @@ const ArmarConvocatoria = () => {
         cambios.map((j) =>
           axios.post(
             `${API_BASE_URL}/evento_convocatoria_actualizar`,
-            { codevento, codpersona: j.codpersona, convocatoria: j.convocatoria },
+            { codevento, codpersona: j.codpersona, convocatoria: j.convocatoria, orden: j.orden ?? null },
             { headers: { Authorization: `Bearer ${token}` } }
           )
         )
@@ -132,8 +139,9 @@ const ArmarConvocatoria = () => {
     );
   }
 
-  const titulares = jugadores.filter((j) => j.convocatoria === "T");
-  const suplentes = jugadores.filter((j) => j.convocatoria === "S");
+  const porOrden = (a, b) => (a.orden ?? 0) - (b.orden ?? 0);
+  const titulares = jugadores.filter((j) => j.convocatoria === "T").sort(porOrden);
+  const suplentes = jugadores.filter((j) => j.convocatoria === "S").sort(porOrden);
   const pool = jugadores.filter((j) => j.convocatoria !== "T" && j.convocatoria !== "S");
 
   const cantTitulares = evento?.cant_titulares ?? null;
@@ -214,7 +222,7 @@ const ArmarConvocatoria = () => {
           <SlotsLista>
             {suplentes.map((j, i) => (
               <SlotOcupado key={j.codpersona}>
-                <SlotNumero>{i + 1}</SlotNumero>
+                <SlotNumero>{titulares.length + i + 1}</SlotNumero>
                 <SlotNombre>{nombreDe(j)}</SlotNombre>
                 {!soloLectura && <QuitarBtn onClick={() => quitar(j.codpersona)}>✕</QuitarBtn>}
               </SlotOcupado>
@@ -223,7 +231,7 @@ const ArmarConvocatoria = () => {
 
           {faltanSuplentes && !soloLectura && (
             <SlotPendiente>
-              <Prompt>Elegí al Suplente #{suplentes.length + 1}</Prompt>
+              <Prompt>Elegí al Suplente #{titulares.length + suplentes.length + 1}</Prompt>
               {pool.length === 0 ? (
                 <EmptyState>No quedan jugadores disponibles</EmptyState>
               ) : (
