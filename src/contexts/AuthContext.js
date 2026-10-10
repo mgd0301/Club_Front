@@ -14,6 +14,9 @@ export const AuthProvider = ({ children }) => {
   // 👇 NUEVO: Agregar divisiones seleccionadas al contexto
   const [divisionesSeleccionadas, setDivisionesSeleccionadas] = useState([]);
 
+  // codevento de un partido en vivo cuyo cronómetro está corriendo (o null)
+  const [partidoEnCurso, setPartidoEnCurso] = useState(null);
+
   useEffect(() => {
     const token = localStorage.getItem('token');
     const storedUser = localStorage.getItem('currentUser');
@@ -34,6 +37,7 @@ export const AuthProvider = ({ children }) => {
     setSeccionActiva("inicio");
     setPersonasDivision([]);
     setDivisionesSeleccionadas([]); // 👈 Limpiar también
+    setPartidoEnCurso(null);
     localStorage.removeItem('token');
     localStorage.removeItem('currentUser');
   };
@@ -55,7 +59,9 @@ export const AuthProvider = ({ children }) => {
         setPersonasDivision,
         // 👇 EXPORTAR los nuevos valores
         divisionesSeleccionadas,
-        setDivisionesSeleccionadas
+        setDivisionesSeleccionadas,
+        partidoEnCurso,
+        setPartidoEnCurso
       }}
     >
       {children}

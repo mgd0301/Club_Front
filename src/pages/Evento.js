@@ -13,11 +13,31 @@ const CrearEvento = () => {
 
   const [divisiones, setDivisiones] = useState([]);
   const [divisionesSeleccionadas, setDivisionesSeleccionadas] = useState([]);
+  const [divisionesTodas, setDivisionesTodas] = useState([]);
 
   const [fecha, setFecha] = useState("");
   const [hora, setHora] = useState("");
   const [observacion, setObservacion] = useState("");
   const [loading, setLoading] = useState(false);
+  const [tipoEvento, setTipoEvento] = useState("E"); // 'E' Entrenamiento | 'P' Partido
+  const [divisionPadreSeleccionada, setDivisionPadreSeleccionada] = useState(null);
+  const [subdivisionSeleccionada, setSubdivisionSeleccionada] = useState(null);
+
+  const [clubesRivales, setClubesRivales] = useState([]);
+  const [codclubRival, setCodclubRival] = useState("");
+
+  // Para un partido primero se elige la división (M14) entre las que la persona tiene
+  // acceso/permiso. Si esa división tiene sub-divisiones (A, B), recién ahí aparecen
+  // debajo para elegir una sí o sí; si no tiene, la división elegida ya es la jugable.
+  const hijosDeSeleccionada = divisionPadreSeleccionada
+    ? divisionesTodas.filter((d) => d.coddivision_padre === divisionPadreSeleccionada)
+    : [];
+
+  const handleSeleccionarPadre = (coddivision) => {
+    setDivisionPadreSeleccionada(coddivision);
+    const tieneHijos = divisionesTodas.some((d) => d.coddivision_padre === coddivision);
+    setSubdivisionSeleccionada(tieneHijos ? null : coddivision);
+  };
 
   /* =========================
      Cargar divisiones
@@ -48,6 +68,62 @@ const CrearEvento = () => {
     fetchDivisionesPersona();
   }, [currentUser, currentClub, currentDisciplina]);
 
+  useEffect(() => {
+    if (!currentClub?.codclub || !currentDisciplina?.coddisciplina) return;
+
+    const fetchDivisionesTodas = async () => {
+      try {
+        const resp = await axios.post(
+          `${API_BASE_URL}/divisiones_disciplina`,
+          {
+            coddisciplina: currentDisciplina.coddisciplina,
+            codclub: currentClub.codclub,
+          },
+          {
+            headers: {
+              Authorization: `Bearer ${localStorage.getItem("token")}`,
+            },
+          }
+        );
+        setDivisionesTodas(resp.data);
+      } catch (err) {
+        console.error("Error cargando divisiones del club:", err);
+      }
+    };
+
+    fetchDivisionesTodas();
+  }, [currentClub, currentDisciplina]);
+
+  useEffect(() => {
+    if (tipoEvento !== "P" || !currentDisciplina?.coddisciplina) {
+      setClubesRivales([]);
+      setCodclubRival("");
+      return;
+    }
+
+    const fetchClubesRivales = async () => {
+      try {
+        const resp = await axios.post(
+          `${API_BASE_URL}/clubes_por_disciplina`,
+          {
+            coddisciplina: currentDisciplina.coddisciplina,
+            codclub_excluir: currentClub?.codclub,
+          },
+          {
+            headers: {
+              Authorization: `Bearer ${localStorage.getItem("token")}`,
+            },
+          }
+        );
+        setClubesRivales(resp.data);
+      } catch (err) {
+        console.error("Error cargando clubes rivales:", err);
+      }
+    };
+
+    fetchClubesRivales();
+  }, [tipoEvento, currentDisciplina, currentClub]);
+
 
 
 
@@ -58,12 +134,21 @@ const CrearEvento = () => {
 
 const registrarEvento = async () => {
     if (loading) return;
-    
-    if (!divisionesSeleccionadas || divisionesSeleccionadas.length === 0) {
-        alert("Debe seleccionar al menos una división para registrar el evento");
+
+    const divisionesAEnviar =
+      tipoEvento === "P"
+        ? (subdivisionSeleccionada ? [subdivisionSeleccionada] : [])
+        : divisionesSeleccionadas;
+
+    if (!divisionesAEnviar || divisionesAEnviar.length === 0) {
+        alert(
+          tipoEvento === "P"
+            ? "Debe seleccionar la división/sub-división que juega el partido"
+            : "Debe seleccionar al menos una división para registrar el evento"
+        );
         return;
     }
-    
+
     try {
         setLoading(true);
 
@@ -72,28 +157,31 @@ const registrarEvento = async () => {
         // 🔥 Convertir fecha y hora local del usuario a UTC
         // Si no hay hora, usamos "00:00"
         const fechaHoraUTC = localToUTC(fecha, hora || "00:00");
-        
+
         if (!fechaHoraUTC) {
             alert("Error al convertir la fecha/hora");
             return;
         }
-        
+
         // Separar la fecha UTC y la hora UTC (sin segundos)
         const [fechaUTC, horaUTCCompleta] = fechaHoraUTC.split(' ');
         const horaUTC = horaUTCCompleta.substring(0, 5); // "HH:MM"
-        
+
         console.log("Original local:", fecha, hora);
         console.log("Enviando UTC:", fechaUTC, horaUTC);
 
-        await axios.post(
+        const resp = await axios.post(
             `${API_BASE_URL}/nuevo_evento`,
             {
                 fecha: fechaUTC,      // 🔥 fecha en UTC
                 hora: horaUTC,        // 🔥 hora en UTC
                 observacion,
-                divisiones: divisionesSeleccionadas,
-                tipo: 'E',
-                subtipo: 'C'
+                divisiones: divisionesAEnviar,
+                tipo: tipoEvento,
+                subtipo: 'C',
+                coddisciplina: currentDisciplina?.coddisciplina,
+                codclub: currentClub?.codclub,
+                codclub_rival: tipoEvento === "P" ? (codclubRival || null) : null
             },
             {
                 headers: {
@@ -241,19 +329,101 @@ const registrarEvento = async () => {
         </Section>
 
         <Section>
-          <Label>Divisiones</Label>
+          <Label>Tipo de evento</Label>
           <DivisionesGrid>
-            {divisiones.map((d) => (
-              <DivisionBtn
-                key={d.coddivision}
-                active={divisionesSeleccionadas.includes(d.coddivision)}
-                onClick={() => toggleDivision(d.coddivision)}
-              >
-                {d.descripcion}
-              </DivisionBtn>
-            ))}
+            <DivisionBtn
+              active={tipoEvento === "E"}
+              onClick={() => {
+                setTipoEvento("E");
+                setDivisionPadreSeleccionada(null);
+                setSubdivisionSeleccionada(null);
+              }}
+            >
+              Entrenamiento
+            </DivisionBtn>
+            <DivisionBtn
+              active={tipoEvento === "P"}
+              onClick={() => {
+                setTipoEvento("P");
+                setDivisionPadreSeleccionada(null);
+                setSubdivisionSeleccionada(null);
+              }}
+            >
+              Partido
+            </DivisionBtn>
           </DivisionesGrid>
         </Section>
+
+        {tipoEvento === "E" ? (
+          <Section>
+            <Label>Divisiones</Label>
+            <DivisionesGrid>
+              {divisiones.map((d) => (
+                <DivisionBtn
+                  key={d.coddivision}
+                  active={divisionesSeleccionadas.includes(d.coddivision)}
+                  onClick={() => toggleDivision(d.coddivision)}
+                >
+                  {d.descripcion}
+                </DivisionBtn>
+              ))}
+            </DivisionesGrid>
+          </Section>
+        ) : (
+          <>
+            <Section>
+              <Label>División que juega</Label>
+              <DivisionesGrid>
+                {divisiones.map((d) => (
+                  <DivisionBtn
+                    key={d.coddivision}
+                    active={divisionPadreSeleccionada === d.coddivision}
+                    onClick={() => handleSeleccionarPadre(d.coddivision)}
+                  >
+                    {d.descripcion}
+                  </DivisionBtn>
+                ))}
+              </DivisionesGrid>
+            </Section>
+
+            {hijosDeSeleccionada.length > 0 && (
+              <Section>
+                <Label>Sub-división</Label>
+                <DivisionesGrid>
+                  {hijosDeSeleccionada.map((d) => (
+                    <DivisionBtn
+                      key={d.coddivision}
+                      active={subdivisionSeleccionada === d.coddivision}
+                      onClick={() => setSubdivisionSeleccionada(d.coddivision)}
+                    >
+                      {d.descripcion}
+                    </DivisionBtn>
+                  ))}
+                </DivisionesGrid>
+              </Section>
+            )}
+
+            <Section>
+              <Label>Rival</Label>
+              <Select
+                value={codclubRival}
+                onChange={(e) => setCodclubRival(e.target.value)}
+              >
+                <option value="">Sin definir</option>
+                {clubesRivales.map((c) => (
+                  <option key={c.codclub} value={c.codclub}>
+                    {c.descripcion}
+                  </option>
+                ))}
+              </Select>
+              {clubesRivales.length === 0 && (
+                <small>
+                  No hay clubes cargados con esta disciplina todavía.
+                </small>
+              )}
+            </Section>
+          </>
+        )}
 
         <Section>
           <Label>Observacion</Label>
@@ -309,6 +479,11 @@ const Input = styled.input`
 `;
 
 const Textarea = styled.textarea`
+  width: 100%;
+  padding: 10px;
+`;
+
+const Select = styled.select`
   width: 100%;
   padding: 10px;
 `;

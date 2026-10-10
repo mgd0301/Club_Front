@@ -5,7 +5,10 @@ import { API_BASE_URL } from "../config";
 import { localToUTC } from "../utils/helpers";
 import  EstadisticasPersona  from "./EstadisticasPersona";
 
-const EstadisticasDivisiones = ({ coddivisiones = [], nombresDivisiones = [], codactividad, fecha_desde, fecha_hasta }) => {
+const ARRAY_VACIO = [];
+
+const EstadisticasDivisiones = ({ coddivisiones = ARRAY_VACIO, nombresDivisiones = ARRAY_VACIO, codpersonas = null, integrantesGrupo = ARRAY_VACIO, tituloGrupo = "", codactividad, fecha_desde, fecha_hasta }) => {
+  const modoGrupo = Array.isArray(codpersonas) && codpersonas.length > 0;
   const [dataGimnasio, setDataGimnasio] = useState([]);
   const [dataEntrenamiento, setDataEntrenamiento] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -50,13 +53,13 @@ const fetchData = async () => {
     const [respGym, respEntrenamiento] = await Promise.all([
       axios.post(`${API_BASE_URL}/historial_asistencia_actividades`, {
         codactividad,
-        coddivisiones,
+        ...(modoGrupo ? { codpersonas } : { coddivisiones }),
         fecha_desde: fechaDesde,
         fecha_hasta: fechaHasta
       }, config),
 
       axios.post(`${API_BASE_URL}/asistencias_divisiones`, {
-        coddivisiones,
+        ...(modoGrupo ? { codpersonas } : { coddivisiones }),
         fecha_desde: fechaDesde,
         fecha_hasta: fechaHasta
       }, config)
@@ -87,7 +90,7 @@ useEffect(() => {
 
 useEffect(() => {
   if (
-    coddivisiones.length > 0 &&
+    (coddivisiones.length > 0 || modoGrupo) &&
     fechasConsultada.desde &&
     fechasConsultada.hasta &&
     codactividad &&
@@ -95,7 +98,7 @@ useEffect(() => {
   ) {
     fetchData();
   }
-}, [coddivisiones, fechasConsultada, codactividad, consultaRealizada]); // 👈 CAMBIADO
+}, [coddivisiones, codpersonas, fechasConsultada, codactividad, consultaRealizada]); // 👈 CAMBIADO
 
   const semanas = useMemo(() => {
     const d1 = new Date(fecha_desde);
@@ -107,17 +110,30 @@ useEffect(() => {
 const jugadores = useMemo(() => {
   const map = {};
 
+  const nuevoJugador = (id, nombre, division) => ({
+    codpersona: id,
+    nombre: nombre || "",
+    division: division || "",
+    total_entrenamiento: 0,
+    asistio_entrenamiento: 0,
+    gym: 0
+  });
+
+  // Seed con el roster completo del grupo (para que aparezcan todos aunque no tengan asistencias en el período)
+  if (modoGrupo) {
+    integrantesGrupo.forEach(m => {
+      const divisionLabel = Array.isArray(m.divisiones)
+        ? m.divisiones.map(d => d.descripcion).join(", ")
+        : "";
+      map[m.codpersona] = nuevoJugador(m.codpersona, m.nombre, divisionLabel);
+    });
+  }
+
   // Entrenamiento
   dataEntrenamiento.forEach(r => {
     const id = r.codpersona;
     if (!map[id]) {
-      map[id] = {
-        codpersona: id,
-        nombre: r.nombre || "",
-        total_entrenamiento: 0,
-        asistio_entrenamiento: 0,
-        gym: 0
-      };
+      map[id] = nuevoJugador(id, r.nombre);
     } else if (!map[id].nombre && r.nombre) {
       map[id].nombre = r.nombre;
     }
@@ -133,13 +149,7 @@ const jugadores = useMemo(() => {
   dataGimnasio.forEach(r => {
     const id = r.codpersona;
     if (!map[id]) {
-      map[id] = {
-        codpersona: id,
-        nombre: r.nombre || "",
-        total_entrenamiento: 0,
-        asistio_entrenamiento: 0,
-        gym: 0
-      };
+      map[id] = nuevoJugador(id, r.nombre);
     } else if (!map[id].nombre && r.nombre) {
       map[id].nombre = r.nombre;
     }
@@ -172,7 +182,7 @@ const jugadores = useMemo(() => {
     };
   }).sort((a, b) => b.pctTotal - a.pctTotal);
 
-}, [dataEntrenamiento, dataGimnasio, semanas, esperadoGymSemanal]);
+}, [dataEntrenamiento, dataGimnasio, semanas, esperadoGymSemanal, modoGrupo, integrantesGrupo]);
 
 
   const jugadoresOrdenados = useMemo(() => {
@@ -218,7 +228,11 @@ const getColorPorPorcentaje = (porcentaje) => {
   <Container>
     <Header>
       <TituloContainer>
-        <h3>📊 Estadísticas de Divisiónes: {nombresDivisiones.join(", ")}</h3>
+        <h3>
+          {modoGrupo
+            ? `📊 Estadísticas del Grupo: ${tituloGrupo}`
+            : `📊 Estadísticas de Divisiónes: ${nombresDivisiones.join(", ")}`}
+        </h3>
       </TituloContainer>
 
       <ControlesContainer>
@@ -258,6 +272,9 @@ const getColorPorPorcentaje = (porcentaje) => {
             <CardHeader>
               <span className="nombre" title={j.nombre}>
                 {j.nombre}
+                {modoGrupo && j.division && (
+                  <DivisionLabel> · {j.division}</DivisionLabel>
+                )}
               </span>
 
               <PorcentajeBadge color={getColorPorPorcentaje(j.pctTotal)} bold>
@@ -329,7 +346,10 @@ const getColorPorPorcentaje = (porcentaje) => {
                   style={{ cursor: "pointer" }}
                 >
                   <NombreCelda title={j.nombre}>
-                    {j.nombre}
+                    <NombreTexto>{j.nombre}</NombreTexto>
+                    {modoGrupo && j.division && (
+                      <DivisionTag>{j.division}</DivisionTag>
+                    )}
                   </NombreCelda>
 
                   <td>
@@ -572,7 +592,19 @@ const NombreCelda = styled.td`
   font-weight: 500;
   padding-left: 10px;
   max-width: 120px;
+`;
 
+const NombreTexto = styled.div`
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+`;
+
+const DivisionTag = styled.div`
+  margin-top: 2px;
+  font-size: 11px;
+  font-weight: 400;
+  color: #6c757d;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -749,6 +781,12 @@ const CardHeader = styled.div`
     overflow: hidden;
     text-overflow: ellipsis;
   }
+`;
+
+const DivisionLabel = styled.span`
+  font-size: 12px;
+  font-weight: 400;
+  color: #6c757d;
 `;
 
 const CardBody = styled.div`

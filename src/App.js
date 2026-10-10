@@ -6,6 +6,12 @@ import Evento from './pages/Evento';
 import Registrar from './pages/Registrar';
 import Persona  from './pages/Persona';
 import PersonasAdministrar from './pages/PersonasAdministrar';
+import AdministrarDivisiones from './pages/AdministrarDivisiones';
+import AdministrarClubes from './pages/AdministrarClubes';
+import AdministrarGrupos from './pages/AdministrarGrupos';
+import ArmarConvocatoria from './pages/ArmarConvocatoria';
+import PartidoEnVivo from './pages/PartidoEnVivo';
+import SucesosAdmin from './pages/SucesosAdmin';
 
 import { useContext } from 'react';
 
@@ -74,7 +80,60 @@ function App() {
             </ProtectedRoute>
           }
         />
-      
+
+        <Route
+          path="/admin-divisiones"
+          element={
+            <ProtectedRoute>
+              <AdministrarDivisiones />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/convocatoria/:codevento"
+          element={
+            <ProtectedRoute>
+              <ArmarConvocatoria />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/partido/:codevento"
+          element={
+            <ProtectedRoute>
+              <PartidoEnVivo />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/admin-sucesos"
+          element={
+            <ProtectedRoute>
+              <SucesosAdmin />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/admin-clubes"
+          element={
+            <ProtectedRoute>
+              <AdministrarClubes />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/admin-grupos"
+          element={
+            <ProtectedRoute>
+              <AdministrarGrupos />
+            </ProtectedRoute>
+          }
+        />
 
         </Routes>
       </Router>

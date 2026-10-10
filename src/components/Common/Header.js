@@ -1,11 +1,12 @@
 // src/components/common/Header.js
-import React, { useContext, useEffect, useState } from "react";
+import React, { useContext, useEffect, useRef, useState } from "react";
 import styled from "styled-components";
 import axios from "axios";
 import { AuthContext } from "../../contexts/AuthContext";
 import { useNavigate } from "react-router-dom";
 import { MdOutlineSportsRugby } from "react-icons/md";
 import { API_BASE_URL } from "../../config";
+import Swal from "sweetalert2";
 
 const AppHeader = () => {
   const {
@@ -18,12 +19,25 @@ const AppHeader = () => {
     seccionActiva,
     setSeccionActiva,
     // 👇 IMPORTAR del contexto
-    setDivisionesSeleccionadas
+    setDivisionesSeleccionadas,
+    partidoEnCurso
   } = useContext(AuthContext);
   
   const [clubes, setClubes] = useState([]);
   const [disciplinas, setDisciplinas] = useState([]);
+  const [menuAdminAbierto, setMenuAdminAbierto] = useState(false);
   const navigate = useNavigate();
+  const menuAdminRef = useRef(null);
+
+  useEffect(() => {
+    const handleClickFuera = (e) => {
+      if (menuAdminRef.current && !menuAdminRef.current.contains(e.target)) {
+        setMenuAdminAbierto(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickFuera);
+    return () => document.removeEventListener("mousedown", handleClickFuera);
+  }, []);
 
   // 🔹 Traer clubes del usuario
   useEffect(() => {
@@ -83,12 +97,51 @@ const AppHeader = () => {
     console.log("Club cambiado a:", clubSel?.codclub, "divisiones limpiadas");
   };
 
-const handleAdminClick = () => {
+  const confirmarSiHayPartido = async () => {
+    if (!partidoEnCurso) return true;
+    const result = await Swal.fire({
+      title: "Hay un partido en curso",
+      text: "El cronómetro sigue corriendo. Si salís ahora podés volver más tarde al mismo momento del partido.",
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonText: "Salir igual",
+      cancelButtonText: "Quedarme",
+    });
+    return result.isConfirmed;
+  };
+
+const handleAdminClick = async () => {
+  if (!(await confirmarSiHayPartido())) return;
   setSeccionActiva("admin_personas");
   navigate("/admin-personas"); // 👈 Debe coincidir con la ruta en App.js
 };
 
-  const handleVolverClick = () => {
+const handleAdminDivisionesClick = async () => {
+  if (!(await confirmarSiHayPartido())) return;
+  setSeccionActiva("admin_divisiones");
+  navigate("/admin-divisiones");
+};
+
+const handleAdminSucesosClick = async () => {
+  if (!(await confirmarSiHayPartido())) return;
+  setSeccionActiva("admin_sucesos");
+  navigate("/admin-sucesos");
+};
+
+const handleAdminClubesClick = async () => {
+  if (!(await confirmarSiHayPartido())) return;
+  setSeccionActiva("admin_clubes");
+  navigate("/admin-clubes");
+};
+
+const handleAdminGruposClick = async () => {
+  if (!(await confirmarSiHayPartido())) return;
+  setSeccionActiva("admin_grupos");
+  navigate("/admin-grupos");
+};
+
+  const handleVolverClick = async () => {
+    if (!(await confirmarSiHayPartido())) return;
     setSeccionActiva("inicio");
     navigate("/dashboard");
   };
@@ -119,6 +172,7 @@ const handleAdminClick = () => {
 
 
                   onClick={async () => {
+                    if (!(await confirmarSiHayPartido())) return;
                     try {
                       await axios.post(
                         `${API_BASE_URL}/logout`,
@@ -149,7 +203,12 @@ const handleAdminClick = () => {
 
       {/* SEGUNDA FILA (móvil): Logo + Selects + Botones Admin */}
       <BottomRow>
-        <DesktopLogo>
+        <DesktopLogo
+          onClick={async () => {
+            if (!(await confirmarSiHayPartido())) return;
+            navigate("/dashboard");
+          }}
+        >
           <AppNombre>ClubIp</AppNombre>
           <MdOutlineSportsRugby size={30} color="#1877f2" />
         </DesktopLogo>
@@ -190,15 +249,73 @@ const handleAdminClick = () => {
 
           <AdminButtonsContainer>
             {esAdmin() && (
-              <AdminButton 
+              <AdminButton
                 onClick={handleAdminClick}
                 title="Adminsitrar Personas"
                 active={seccionActiva === "admin_personas"}
               >
-                ⚙ 
+                ⚙
               </AdminButton>
             )}
-            
+
+            {esAdmin() && (
+              <AdminMenuWrapper ref={menuAdminRef}>
+                <AdminButton
+                  onClick={() => setMenuAdminAbierto((v) => !v)}
+                  title="Más opciones de administración"
+                  active={
+                    menuAdminAbierto ||
+                    seccionActiva === "admin_divisiones" ||
+                    seccionActiva === "admin_sucesos" ||
+                    seccionActiva === "admin_clubes" ||
+                    seccionActiva === "admin_grupos"
+                  }
+                >
+                  ⚙ Más ▾
+                </AdminButton>
+                {menuAdminAbierto && (
+                  <AdminMenuDropdown>
+                    <AdminMenuItem
+                      onClick={() => {
+                        setMenuAdminAbierto(false);
+                        handleAdminDivisionesClick();
+                      }}
+                      active={seccionActiva === "admin_divisiones"}
+                    >
+                      🗂 Divisiones
+                    </AdminMenuItem>
+                    <AdminMenuItem
+                      onClick={() => {
+                        setMenuAdminAbierto(false);
+                        handleAdminSucesosClick();
+                      }}
+                      active={seccionActiva === "admin_sucesos"}
+                    >
+                      🎯 Sucesos
+                    </AdminMenuItem>
+                    <AdminMenuItem
+                      onClick={() => {
+                        setMenuAdminAbierto(false);
+                        handleAdminClubesClick();
+                      }}
+                      active={seccionActiva === "admin_clubes"}
+                    >
+                      🏟 Clubes
+                    </AdminMenuItem>
+                    <AdminMenuItem
+                      onClick={() => {
+                        setMenuAdminAbierto(false);
+                        handleAdminGruposClick();
+                      }}
+                      active={seccionActiva === "admin_grupos"}
+                    >
+                      👥 Grupos
+                    </AdminMenuItem>
+                  </AdminMenuDropdown>
+                )}
+              </AdminMenuWrapper>
+            )}
+
             {/*seccionActiva === "admin_personas" && (
               <VolverButton onClick={handleVolverClick}>
                 ← Volver al Dashboard
@@ -271,6 +388,7 @@ const UserInfo = styled.div`
 
 const DesktopLogo = styled.div`
   display: none;
+  cursor: pointer;
 
   @media (min-width: 769px) {
     display: flex;
@@ -295,11 +413,60 @@ const SelectsContainer = styled.div`
 
 const AdminButtonsContainer = styled.div`
   display: flex;
+  flex-wrap: wrap;
   gap: 0.8rem;
   align-items: center;
-  
+  width: 100%;
+
   @media (min-width: 769px) {
+    width: auto;
     margin-left: 10px;
+  }
+`;
+
+const AdminMenuWrapper = styled.div`
+  position: relative;
+  width: 100%;
+
+  @media (min-width: 769px) {
+    width: auto;
+  }
+`;
+
+const AdminMenuDropdown = styled.div`
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  background: #ffffff;
+  border-radius: 8px;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  z-index: 40;
+
+  @media (min-width: 769px) {
+    right: auto;
+    min-width: 180px;
+  }
+`;
+
+const AdminMenuItem = styled.button`
+  padding: 10px 14px;
+  background: ${(props) => (props.active ? "#eef3f9" : "transparent")};
+  color: #2c3e50;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.9rem;
+  text-align: left;
+  white-space: nowrap;
+
+  &:hover {
+    background: #eef3f9;
   }
 `;
 

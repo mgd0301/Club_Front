@@ -1,8 +1,8 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
-  appId: 'com.fulbito.ziel',
-  appName: 'FulbitoApp',
+  appId: 'com.clubip.app',
+  appName: 'ClubIp',
   webDir: 'build'
 };
 

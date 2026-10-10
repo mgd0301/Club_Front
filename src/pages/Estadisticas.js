@@ -1,10 +1,83 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useContext, useEffect, useCallback } from "react";
 import styled from "styled-components";
 import EstadisticasDivisiones from "../components/EstadisticasDivisiones";
+import { AuthContext } from "../contexts/AuthContext";
+import { API_BASE_URL } from "../config";
 
 const Estadisticas = (props) => {
+  const { currentClub } = useContext(AuthContext);
   const [vista, setVista] = useState("division");
-  
+
+  const [grupos, setGrupos] = useState([]);
+  const [codgrupoSeleccionado, setCodgrupoSeleccionado] = useState("");
+  const [miembrosGrupo, setMiembrosGrupo] = useState([]);
+  const [cargandoMiembrosGrupo, setCargandoMiembrosGrupo] = useState(false);
+
+  const token = localStorage.getItem("token");
+
+  const cargarGrupos = useCallback(async () => {
+    if (!currentClub?.codclub) return;
+    try {
+      const res = await fetch(`${API_BASE_URL}/grupos_listar`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ codclub: currentClub.codclub })
+      });
+      const data = await res.json();
+      setGrupos(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error("Error cargando grupos:", err);
+    }
+  }, [currentClub, token]);
+
+  useEffect(() => {
+    if (vista === "grupo") {
+      cargarGrupos();
+    }
+  }, [vista, cargarGrupos]);
+
+  useEffect(() => {
+    if (!codgrupoSeleccionado) {
+      setMiembrosGrupo([]);
+      return;
+    }
+
+    const cargarMiembros = async () => {
+      setCargandoMiembrosGrupo(true);
+      try {
+        const res = await fetch(`${API_BASE_URL}/grupo_personas_listar`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`
+          },
+          body: JSON.stringify({ codgrupo: codgrupoSeleccionado })
+        });
+        const data = await res.json();
+        setMiembrosGrupo(Array.isArray(data) ? data : []);
+      } catch (err) {
+        console.error("Error cargando integrantes del grupo:", err);
+      } finally {
+        setCargandoMiembrosGrupo(false);
+      }
+    };
+
+    cargarMiembros();
+  }, [codgrupoSeleccionado, token]);
+
+  const codpersonasGrupo = useMemo(
+    () => miembrosGrupo.map((m) => m.codpersona),
+    [miembrosGrupo]
+  );
+
+  const nombreGrupoSeleccionado = useMemo(() => {
+    const g = grupos.find((g) => String(g.codgrupo) === String(codgrupoSeleccionado));
+    return g?.descripcion || "";
+  }, [grupos, codgrupoSeleccionado]);
+
   const getFechaDefaultDesde = () => {
     const fecha = new Date();
     fecha.setDate(fecha.getDate() - 7);
@@ -77,17 +150,62 @@ const Estadisticas = (props) => {
         <Tab active={vista === "persona"} onClick={() => setVista("persona")}>
           Persona
         </Tab>
+        <Tab active={vista === "grupo"} onClick={() => setVista("grupo")}>
+          Grupo
+        </Tab>
       </Tabs>
 
       <Content>
         {vista === "division" && (
-          <EstadisticasDivisiones 
+          <EstadisticasDivisiones
             coddivisiones={divisionesMemo}
             nombresDivisiones={nombresMemo}
             codactividad={props.codactividad}
             fecha_desde={fechasConsultadas.desde}
             fecha_hasta={fechasConsultadas.hasta}
           />
+        )}
+
+        {vista === "grupo" && (
+          <>
+            <SelectorGrupo>
+              <label>Elegí un grupo:</label>
+              <select
+                value={codgrupoSeleccionado}
+                onChange={(e) => setCodgrupoSeleccionado(e.target.value)}
+              >
+                <option value="">Seleccionar...</option>
+                {grupos.map((g) => (
+                  <option key={g.codgrupo} value={g.codgrupo}>
+                    {g.descripcion} ({g.cantidad_personas})
+                  </option>
+                ))}
+              </select>
+            </SelectorGrupo>
+
+            {!codgrupoSeleccionado && (
+              <MensajeVacio>Seleccioná un grupo para ver sus estadísticas.</MensajeVacio>
+            )}
+
+            {codgrupoSeleccionado && cargandoMiembrosGrupo && (
+              <MensajeVacio>Cargando integrantes...</MensajeVacio>
+            )}
+
+            {codgrupoSeleccionado && !cargandoMiembrosGrupo && codpersonasGrupo.length === 0 && (
+              <MensajeVacio>Este grupo no tiene integrantes.</MensajeVacio>
+            )}
+
+            {codgrupoSeleccionado && !cargandoMiembrosGrupo && codpersonasGrupo.length > 0 && (
+              <EstadisticasDivisiones
+                codpersonas={codpersonasGrupo}
+                integrantesGrupo={miembrosGrupo}
+                tituloGrupo={nombreGrupoSeleccionado}
+                codactividad={props.codactividad}
+                fecha_desde={fechasConsultadas.desde}
+                fecha_hasta={fechasConsultadas.hasta}
+              />
+            )}
+          </>
         )}
       </Content>
     </Container>
@@ -192,4 +310,36 @@ const Content = styled.div`
   background: #fff;
   padding: 10px;
   border-radius: 10px;
+`;
+
+const SelectorGrupo = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 20px;
+
+  label {
+    font-weight: 500;
+    color: #333;
+  }
+
+  select {
+    padding: 8px 12px;
+    border-radius: 6px;
+    border: 1px solid #ced4da;
+    font-size: 14px;
+    min-width: 220px;
+
+    &:focus {
+      outline: none;
+      border-color: #80bdff;
+      box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+    }
+  }
+`;
+
+const MensajeVacio = styled.div`
+  padding: 20px;
+  text-align: center;
+  color: #6c757d;
 `;

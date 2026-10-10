@@ -1,10 +1,10 @@
 apply plugin: 'com.android.application'
 
 android {
-    namespace "com.example.app"
+    namespace "com.clubip.app"
     compileSdk rootProject.ext.compileSdkVersion
     defaultConfig {
-        applicationId "FulbitoApp.ziel.fu10"
+        applicationId "com.clubip.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
@@ -42,5 +42,7 @@ dependencies {
 
 apply from: 'capacitor.build.gradle'
 
-// ✅ Aplicar plugin de Google Services al final, sin try/catch
-apply plugin: 'com.google.gms.google-services'
+// Google Services desactivado: el google-services.json está registrado para
+// el package anterior (Fulbito). Login con Google queda para una próxima
+// vuelta, cuando se registre com.clubip.app en Google Cloud Console.
+// apply plugin: 'com.google.gms.google-services'

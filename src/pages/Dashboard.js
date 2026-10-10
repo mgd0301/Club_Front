@@ -6,7 +6,7 @@ import styled from "styled-components";
 import axios from "axios";
 import { AuthContext } from "../contexts/AuthContext";
 import { API_BASE_URL } from "../config";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import EstadisticasAsistencias from "../components/EstadisticasAsistencias";
 import ActividadesJugadores from "../components/ActividadesJugadores";
 import EstadisticasPersona from "../components/EstadisticasPersona"; // ¡IMPORTANTE! Agregar esta importación
@@ -30,6 +30,7 @@ import {
   FaCalendarAlt,
 } from "react-icons/fa";
 import { MdSick } from "react-icons/md";
+import { GiSoccerField } from "react-icons/gi";
 import { CiSquareAlert } from "react-icons/ci";
 import { FcStatistics } from "react-icons/fc";
 import Swal from "sweetalert2";
@@ -44,7 +45,10 @@ const Dashboard = () => {
     setDivisionesSeleccionadas = () => {}
   } = useContext(AuthContext);
 
-  const [activeTab, setActiveTab] = useState("personas");
+  const location = useLocation();
+  const [activeTab, setActiveTab] = useState(
+    location.state?.activeTab || "personas"
+  );
   const [divisiones, setDivisiones] = useState([]);
   
   const [currentDivision, setCurrentDivision] = useState(null);
@@ -263,28 +267,38 @@ const Dashboard = () => {
      ========================= */
 
   const fetchActividadesClub = async () => {
-    const resp = await axios.post(
-      `${API_BASE_URL}/actividades_club`,
-      {       
-        codclub: currentClub.codclub,       
-      },
-      { headers: { Authorization: `Bearer ${localStorage.getItem("token")}` } }
-    );
-    console.log("Actividades:", resp.data);
-    setActividades(resp.data);
+    try {
+      const resp = await axios.post(
+        `${API_BASE_URL}/actividades_club`,
+        {
+          codclub: currentClub.codclub,
+        },
+        { headers: { Authorization: `Bearer ${localStorage.getItem("token")}` } }
+      );
+      console.log("Actividades:", resp.data);
+      setActividades(resp.data);
+    } catch (err) {
+      console.error("Error cargando actividades del club:", err);
+      setActividades([]);
+    }
   };
 
   const fetchDivisionesPersona = async () => {
-    const resp = await axios.post(
-      `${API_BASE_URL}/divisiones_persona`,
-      {
-        codpersona: currentUser.codpersona,
-        codclub: currentClub.codclub,
-        coddisciplina: currentDisciplina.coddisciplina,
-      },
-      { headers: { Authorization: `Bearer ${localStorage.getItem("token")}` } }
-    );
-    setDivisiones(resp.data);
+    try {
+      const resp = await axios.post(
+        `${API_BASE_URL}/divisiones_persona`,
+        {
+          codpersona: currentUser.codpersona,
+          codclub: currentClub.codclub,
+          coddisciplina: currentDisciplina.coddisciplina,
+        },
+        { headers: { Authorization: `Bearer ${localStorage.getItem("token")}` } }
+      );
+      setDivisiones(resp.data);
+    } catch (err) {
+      console.error("Error cargando divisiones de la persona:", err);
+      setDivisiones([]);
+    }
   };
 
   const fetchEventosDetalles = async () => {
@@ -1114,10 +1128,11 @@ const Dashboard = () => {
             const hora = UTCToLocal(fechaHoraUTC, "time");
 
             return (
-              <EventoCard key={ev.codevento}>
+              <EventoCard key={ev.codevento} tipo={ev.tipo}>
                 <EventoHeader
                   open={ev.open}
                   estado={ev.estado || "A"}
+                  tipo={ev.tipo}
                   onClick={() =>
                     setEventos((prev) =>
                       prev.map((e) =>
@@ -1128,13 +1143,11 @@ const Dashboard = () => {
                     )
                   }
                 >
-                  <MenuEventoWrapper>
-                    <MenuEvento
-                      onAbrir={() => estadoEvento(ev.codevento, "A")}
-                      onFinalizar={() => estadoEvento(ev.codevento, "F")}
-                      onEliminar={() => estadoEvento(ev.codevento, "B")}
-                    />
-                  </MenuEventoWrapper>
+                  <MenuEvento
+                    onAbrir={() => estadoEvento(ev.codevento, "A")}
+                    onFinalizar={() => estadoEvento(ev.codevento, "F")}
+                    onEliminar={() => estadoEvento(ev.codevento, "B")}
+                  />
                   
                   <CandadoWrapper>
                     {ev.estado === "A" ? 
@@ -1151,31 +1164,59 @@ const Dashboard = () => {
 
                   <EventoInfo>
                     <EventoTipo>
+                      {ev.tipo === "P" && <GiSoccerField size={18} title="Partido" />}
                       {TIPO_EVENTO[ev.tipo] || ev.tipo} ·{" "}
                       {SUBTIPO_EVENTO[ev.sub_tipo] || ev.sub_tipo}
                     </EventoTipo>
+                    {ev.tipo === "P" && ev.rival_descripcion && (
+                      <EventoRival>vs. {ev.rival_descripcion}</EventoRival>
+                    )}
                     <EventoDivisiones>
                       {ev.divisiones?.map((d) => d.division).join(" / ")}
                     </EventoDivisiones>
+                    {ev.tipo === "P" && (
+                      <ConvocatoriaButton
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          navigate(`/convocatoria/${ev.codevento}`);
+                        }}
+                      >
+                        📋 Armar convocatoria
+                      </ConvocatoriaButton>
+                    )}
+                    {ev.tipo === "P" && (
+                      <ConvocatoriaButton
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          navigate(`/partido/${ev.codevento}`);
+                        }}
+                      >
+                        ⏱ Partido en vivo
+                      </ConvocatoriaButton>
+                    )}
                   </EventoInfo>
 
-                  <EventoAccionesHeader>
-                    <BotonConContador estado={null} evento={ev} onClick={handleFiltro(null)} />
-                    <BotonConContador estado="I" evento={ev} onClick={handleFiltro("I")} />
-                    <BotonConContador estado="P" evento={ev} onClick={handleFiltro("P")} />
-                    <BotonConContador estado="PN" evento={ev} onClick={handleFiltro("PN")} />
-                    <BotonConContador estado="A" evento={ev} onClick={handleFiltro("A")} />
-                    <BotonConContador estado="AA" evento={ev} onClick={handleFiltro("AA")} />
-                  </EventoAccionesHeader>
+                  {ev.tipo !== "P" && (
+                    <EventoAccionesHeader>
+                      <BotonConContador estado={null} evento={ev} onClick={handleFiltro(null)} />
+                      <BotonConContador estado="I" evento={ev} onClick={handleFiltro("I")} />
+                      <BotonConContador estado="P" evento={ev} onClick={handleFiltro("P")} />
+                      <BotonConContador estado="PN" evento={ev} onClick={handleFiltro("PN")} />
+                      <BotonConContador estado="A" evento={ev} onClick={handleFiltro("A")} />
+                      <BotonConContador estado="AA" evento={ev} onClick={handleFiltro("AA")} />
+                    </EventoAccionesHeader>
+                  )}
 
-                  <EventoAccionesMobile>
-                    <BotonConContador estado={null} evento={ev} onClick={handleFiltro(null)} />
-                    <BotonConContador estado="I" evento={ev} onClick={handleFiltro("I")} />
-                    <BotonConContador estado="P" evento={ev} onClick={handleFiltro("P")} />
-                    <BotonConContador estado="PN" evento={ev} onClick={handleFiltro("PN")} />
-                    <BotonConContador estado="A" evento={ev} onClick={handleFiltro("A")} />
-                    <BotonConContador estado="AA" evento={ev} onClick={handleFiltro("AA")} />
-                  </EventoAccionesMobile>
+                  {ev.tipo !== "P" && (
+                    <EventoAccionesMobile>
+                      <BotonConContador estado={null} evento={ev} onClick={handleFiltro(null)} />
+                      <BotonConContador estado="I" evento={ev} onClick={handleFiltro("I")} />
+                      <BotonConContador estado="P" evento={ev} onClick={handleFiltro("P")} />
+                      <BotonConContador estado="PN" evento={ev} onClick={handleFiltro("PN")} />
+                      <BotonConContador estado="A" evento={ev} onClick={handleFiltro("A")} />
+                      <BotonConContador estado="AA" evento={ev} onClick={handleFiltro("AA")} />
+                    </EventoAccionesMobile>
+                  )}
                 </EventoHeader>
 
                 {ev.open && (
@@ -1214,40 +1255,42 @@ const Dashboard = () => {
                                   </NombreDivContainer>
                                 </PersonaEventoInfo>
 
-                                <AccionesEvento>
-                                  <BtnPresente
-                                    onClick={() => asistencia(ev.codevento, p.codpersona, "P")}
-                                    title="Presente"
-                                    disabled={ev.estado !== "A"}
-                                    style={ev.estado !== "A" ? { opacity: 0.5, cursor: "not-allowed" } : {}}
-                                  >
-                                    ✔
-                                  </BtnPresente>
-                                  <BtnPresenteNo
-                                    onClick={() => asistencia(ev.codevento, p.codpersona, "PN")}
-                                    title="Presente no entrena"
-                                    disabled={ev.estado !== "A"}
-                                    style={ev.estado !== "A" ? { opacity: 0.5, cursor: "not-allowed" } : {}}
-                                  >
-                                    ✔-
-                                  </BtnPresenteNo>
-                                  <BtnAusente
-                                    onClick={() => asistencia(ev.codevento, p.codpersona, "A")}
-                                    title="Ausente"
-                                    disabled={ev.estado !== "A"}
-                                    style={ev.estado !== "A" ? { opacity: 0.5, cursor: "not-allowed" } : {}}
-                                  >
-                                    ✖
-                                  </BtnAusente>
-                                  <BtnAusenteAviso
-                                    onClick={() => asistencia(ev.codevento, p.codpersona, "AA")}
-                                    title="Ausente sin aviso"
-                                    disabled={ev.estado !== "A"}
-                                    style={ev.estado !== "A" ? { opacity: 0.5, cursor: "not-allowed" } : {}}
-                                  >
-                                    ⚠
-                                  </BtnAusenteAviso>
-                                </AccionesEvento>
+                                {ev.tipo !== "P" && (
+                                  <AccionesEvento>
+                                    <BtnPresente
+                                      onClick={() => asistencia(ev.codevento, p.codpersona, "P")}
+                                      title="Presente"
+                                      disabled={ev.estado !== "A"}
+                                      style={ev.estado !== "A" ? { opacity: 0.5, cursor: "not-allowed" } : {}}
+                                    >
+                                      ✔
+                                    </BtnPresente>
+                                    <BtnPresenteNo
+                                      onClick={() => asistencia(ev.codevento, p.codpersona, "PN")}
+                                      title="Presente no entrena"
+                                      disabled={ev.estado !== "A"}
+                                      style={ev.estado !== "A" ? { opacity: 0.5, cursor: "not-allowed" } : {}}
+                                    >
+                                      ✔-
+                                    </BtnPresenteNo>
+                                    <BtnAusente
+                                      onClick={() => asistencia(ev.codevento, p.codpersona, "A")}
+                                      title="Ausente"
+                                      disabled={ev.estado !== "A"}
+                                      style={ev.estado !== "A" ? { opacity: 0.5, cursor: "not-allowed" } : {}}
+                                    >
+                                      ✖
+                                    </BtnAusente>
+                                    <BtnAusenteAviso
+                                      onClick={() => asistencia(ev.codevento, p.codpersona, "AA")}
+                                      title="Ausente sin aviso"
+                                      disabled={ev.estado !== "A"}
+                                      style={ev.estado !== "A" ? { opacity: 0.5, cursor: "not-allowed" } : {}}
+                                    >
+                                      ⚠
+                                    </BtnAusenteAviso>
+                                  </AccionesEvento>
+                                )}
                               </PersonaEventoRow>
                             );
                           })}
@@ -1362,6 +1405,7 @@ const DivisionesContainer = styled.div`
   gap: 8px;
   overflow-x: auto;
   padding: 10px;
+  border-top: 1px solid #eaeaea;
 `;
 
 const DivisionButton = styled.button`
@@ -1649,9 +1693,9 @@ const EventoCard = styled.div`
   background: #fff;
   border-radius: 12px;
   box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
-  overflow: hidden;
   transition: all 0.3s ease;
   border: 1px solid #eaeaea;
+  border-left: 4px solid ${({ tipo }) => (tipo === "P" ? "#d62828" : "#764ba2")};
 
   &:hover {
     box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
@@ -1666,10 +1710,12 @@ const EventoHeader = styled.div`
   padding: 20px 16px 16px 60px;
   cursor: pointer;
   color: white;
-  background: ${({ estado }) => {
+  background: ${({ estado, tipo }) => {
     switch(estado) {
       case 'A':
-        return 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
+        return tipo === 'P'
+          ? 'linear-gradient(135deg, #ff7e5f 0%, #d62828 100%)'
+          : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
       case 'F':
         return 'linear-gradient(135deg, #6c757d 0%, #495057 100%)';
       case 'C':
@@ -1682,12 +1728,15 @@ const EventoHeader = styled.div`
   padding-left: 60px;
   min-height: 80px;
   flex-direction: row;
+  border-radius: ${({ open }) => (open ? "12px 12px 0 0" : "12px")};
 
   &:hover {
-    background: ${({ estado }) => {
+    background: ${({ estado, tipo }) => {
       switch(estado) {
         case 'A':
-          return 'linear-gradient(135deg, #764ba2 0%, #667eea 100%)';
+          return tipo === 'P'
+            ? 'linear-gradient(135deg, #d62828 0%, #ff7e5f 100%)'
+            : 'linear-gradient(135deg, #764ba2 0%, #667eea 100%)';
         case 'F':
           return 'linear-gradient(135deg, #495057 0%, #343a40 100%)';
         case 'C':
@@ -1737,16 +1786,50 @@ const EventoInfo = styled.div`
   flex: 1;
 `;
 
+const ConvocatoriaButton = styled.button`
+  margin-top: 6px;
+  padding: 4px 10px;
+  border-radius: 14px;
+  border: none;
+  background: rgba(255, 255, 255, 0.25);
+  color: white;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.4);
+  }
+`;
+
 const EventoTipo = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-weight: 700;
   font-size: 16px;
   color: white;
+
+  @media (max-width: 768px) {
+    justify-content: center;
+  }
 `;
 
 const EventoDivisiones = styled.div`
   font-size: 14px;
   color: rgba(255, 255, 255, 0.85);
   margin-top: 2px;
+`;
+
+const EventoRival = styled.div`
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.9);
+  margin-top: 2px;
+
+  @media (max-width: 768px) {
+    text-align: center;
+  }
 `;
 
 const EventoPersonas = styled.div`
@@ -1967,6 +2050,7 @@ const BtnAusenteAviso = styled(BaseAsistencia)`
 const EventoBody = styled.div`
   overflow-y: auto;
   max-height: 165vh;
+  border-radius: 0 0 12px 12px;
 
   @media (max-width: 768px) {
     max-height: calc(100svh - 72px);
