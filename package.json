@@ -39,7 +39,7 @@
     "start": "react-scripts start --host 0.0.0.0",
     "test": "react-scripts test",
     "eject": "react-scripts eject",
-    "build": "CI=false react-scripts build"
+    "build": "cross-env CI=false react-scripts build"
   },
   "eslintConfig": {
     "extends": [
@@ -62,6 +62,7 @@
   "devDependencies": {
     "binary-extensions": "^3.1.0",
     "chokidar": "^4.0.3",
+    "cross-env": "^10.1.0",
     "fork-ts-checker-webpack-plugin": "^9.1.0"
   }
 }
