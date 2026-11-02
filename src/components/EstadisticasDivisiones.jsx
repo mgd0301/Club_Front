@@ -51,12 +51,14 @@ const fetchData = async () => {
     });
     
     const [respGym, respEntrenamiento] = await Promise.all([
-      axios.post(`${API_BASE_URL}/historial_asistencia_actividades`, {
-        codactividad,
-        ...(modoGrupo ? { codpersonas } : { coddivisiones }),
-        fecha_desde: fechaDesde,
-        fecha_hasta: fechaHasta
-      }, config),
+      codactividad
+        ? axios.post(`${API_BASE_URL}/historial_asistencia_actividades`, {
+            codactividad,
+            ...(modoGrupo ? { codpersonas } : { coddivisiones }),
+            fecha_desde: fechaDesde,
+            fecha_hasta: fechaHasta
+          }, config)
+        : null,
 
       axios.post(`${API_BASE_URL}/asistencias_divisiones`, {
         ...(modoGrupo ? { codpersonas } : { coddivisiones }),
@@ -65,7 +67,7 @@ const fetchData = async () => {
       }, config)
     ]);
 
-    setDataGimnasio(respGym.data?.detalle || []);
+    setDataGimnasio(respGym?.data?.detalle || []);
     setDataEntrenamiento(respEntrenamiento.data || []);
 
   } catch (err) {
@@ -93,7 +95,6 @@ useEffect(() => {
     (coddivisiones.length > 0 || modoGrupo) &&
     fechasConsultada.desde &&
     fechasConsultada.hasta &&
-    codactividad &&
     consultaRealizada
   ) {
     fetchData();
