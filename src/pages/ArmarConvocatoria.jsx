@@ -15,6 +15,9 @@ const ArmarConvocatoria = () => {
   const [evento, setEvento] = useState(null);
   const [jugadores, setJugadores] = useState([]);
   const [original, setOriginal] = useState([]);
+  const [posiciones, setPosiciones] = useState([]);
+  const [formacion, setFormacion] = useState("");
+  const [formacionOriginal, setFormacionOriginal] = useState("");
   const [cargando, setCargando] = useState(true);
   const [guardando, setGuardando] = useState(false);
 
@@ -30,6 +33,8 @@ const ArmarConvocatoria = () => {
       setEvento(resp.data.evento);
       setJugadores(resp.data.jugadores || []);
       setOriginal(resp.data.jugadores || []);
+      setFormacion(resp.data.evento?.formacion || "");
+      setFormacionOriginal(resp.data.evento?.formacion || "");
     } catch (err) {
       console.error("Error cargando convocatoria:", err);
       Swal.fire({
@@ -45,6 +50,18 @@ const ArmarConvocatoria = () => {
   useEffect(() => {
     cargar();
   }, [cargar]);
+
+  useEffect(() => {
+    if (!evento?.coddisciplina) return;
+    axios
+      .post(
+        `${API_BASE_URL}/posiciones_por_disciplina`,
+        { coddisciplina: evento.coddisciplina },
+        { headers: { Authorization: `Bearer ${token}` } }
+      )
+      .then((resp) => setPosiciones(resp.data || []))
+      .catch((err) => console.error("Error cargando posiciones:", err));
+  }, [evento?.coddisciplina, token]);
 
   const soloLectura = evento?.estado === "F" || evento?.estado === "B";
 
@@ -66,31 +83,63 @@ const ArmarConvocatoria = () => {
 
   const quitar = (codpersona) => marcar(codpersona, null);
 
-  const hayCambios = jugadores.some((j) => {
-    const o = original.find((x) => x.codpersona === j.codpersona);
-    return o && o.convocatoria !== j.convocatoria;
-  });
+  const cambiarPosicion = (codpersona, codposicion) => {
+    if (soloLectura) return;
+    setJugadores((prev) =>
+      prev.map((j) =>
+        j.codpersona === codpersona ? { ...j, codposicion: codposicion || null } : j
+      )
+    );
+  };
+
+  const hayCambios =
+    jugadores.some((j) => {
+      const o = original.find((x) => x.codpersona === j.codpersona);
+      return o && (o.convocatoria !== j.convocatoria || (o.codposicion ?? null) !== (j.codposicion ?? null));
+    }) || formacion !== formacionOriginal;
 
   const guardarConvocatoria = async () => {
-    const cambios = jugadores.filter((j) => {
+    const cambiosConvocatoria = jugadores.filter((j) => {
       const o = original.find((x) => x.codpersona === j.codpersona);
       return o && o.convocatoria !== j.convocatoria;
     });
+    const cambiosPosicion = jugadores.filter((j) => {
+      const o = original.find((x) => x.codpersona === j.codpersona);
+      return o && (o.codposicion ?? null) !== (j.codposicion ?? null);
+    });
+    const cambioFormacion = formacion !== formacionOriginal;
 
-    if (cambios.length === 0) return;
+    if (cambiosConvocatoria.length === 0 && cambiosPosicion.length === 0 && !cambioFormacion) return;
 
     setGuardando(true);
     try {
-      await Promise.all(
-        cambios.map((j) =>
+      await Promise.all([
+        ...cambiosConvocatoria.map((j) =>
           axios.post(
             `${API_BASE_URL}/evento_convocatoria_actualizar`,
             { codevento, codpersona: j.codpersona, convocatoria: j.convocatoria, orden: j.orden ?? null },
             { headers: { Authorization: `Bearer ${token}` } }
           )
-        )
-      );
+        ),
+        ...cambiosPosicion.map((j) =>
+          axios.post(
+            `${API_BASE_URL}/evento_posicion_actualizar`,
+            { codevento, codpersona: j.codpersona, codposicion: j.codposicion ?? null },
+            { headers: { Authorization: `Bearer ${token}` } }
+          )
+        ),
+        ...(cambioFormacion
+          ? [
+              axios.post(
+                `${API_BASE_URL}/evento_formacion_actualizar`,
+                { codevento, formacion: formacion || null },
+                { headers: { Authorization: `Bearer ${token}` } }
+              ),
+            ]
+          : []),
+      ]);
       setOriginal(jugadores);
+      setFormacionOriginal(formacion);
       Swal.fire({ title: "Guardado", text: "La convocatoria se guardó correctamente", icon: "success", timer: 1500, showConfirmButton: false });
     } catch (err) {
       console.error("Error guardando convocatoria:", err);
@@ -170,6 +219,32 @@ const ArmarConvocatoria = () => {
           {soloLectura && <SoloLecturaBadge>Evento finalizado · solo lectura</SoloLecturaBadge>}
         </SubtitleRow>
 
+        {evento?.coddisciplina === 3 && (
+          <Seccion>
+            <SeccionHeader>
+              <SeccionTitulo>Formación</SeccionTitulo>
+            </SeccionHeader>
+            <FormacionInput
+              type="text"
+              list="formaciones-sugeridas"
+              placeholder="Ej: 4-3-3"
+              value={formacion}
+              disabled={soloLectura}
+              onChange={(e) => setFormacion(e.target.value)}
+            />
+            <datalist id="formaciones-sugeridas">
+              <option value="4-4-2" />
+              <option value="4-3-3" />
+              <option value="3-4-3" />
+              <option value="4-2-3-1" />
+              <option value="4-3-2-1" />
+              <option value="3-5-2" />
+              <option value="5-3-2" />
+              <option value="5-4-1" />
+            </datalist>
+          </Seccion>
+        )}
+
         <Seccion>
           <SeccionHeader>
             <SeccionTitulo>Titulares</SeccionTitulo>
@@ -184,6 +259,20 @@ const ArmarConvocatoria = () => {
               <SlotOcupado key={j.codpersona}>
                 <SlotNumero>{i + 1}</SlotNumero>
                 <SlotNombre>{nombreDe(j)}</SlotNombre>
+                {posiciones.length > 0 && (
+                  <PosicionSelect
+                    value={j.codposicion || ""}
+                    disabled={soloLectura}
+                    onChange={(e) => cambiarPosicion(j.codpersona, e.target.value ? Number(e.target.value) : null)}
+                  >
+                    <option value="">Sin posición</option>
+                    {posiciones.map((p) => (
+                      <option key={p.codposicion} value={p.codposicion}>
+                        {p.descripcion}
+                      </option>
+                    ))}
+                  </PosicionSelect>
+                )}
                 {!soloLectura && <QuitarBtn onClick={() => quitar(j.codpersona)}>✕</QuitarBtn>}
               </SlotOcupado>
             ))}
@@ -224,6 +313,20 @@ const ArmarConvocatoria = () => {
               <SlotOcupado key={j.codpersona}>
                 <SlotNumero>{titulares.length + i + 1}</SlotNumero>
                 <SlotNombre>{nombreDe(j)}</SlotNombre>
+                {posiciones.length > 0 && (
+                  <PosicionSelect
+                    value={j.codposicion || ""}
+                    disabled={soloLectura}
+                    onChange={(e) => cambiarPosicion(j.codpersona, e.target.value ? Number(e.target.value) : null)}
+                  >
+                    <option value="">Sin posición</option>
+                    {posiciones.map((p) => (
+                      <option key={p.codposicion} value={p.codposicion}>
+                        {p.descripcion}
+                      </option>
+                    ))}
+                  </PosicionSelect>
+                )}
                 {!soloLectura && <QuitarBtn onClick={() => quitar(j.codpersona)}>✕</QuitarBtn>}
               </SlotOcupado>
             ))}
@@ -388,6 +491,37 @@ const SlotNombre = styled.span`
   flex: 1;
   font-weight: 600;
   color: #333;
+`;
+
+const PosicionSelect = styled.select`
+  padding: 5px 8px;
+  border-radius: 8px;
+  border: 1px solid #dde3ea;
+  background: #fff;
+  color: #333;
+  font-size: 12px;
+  font-weight: 600;
+  max-width: 140px;
+
+  &:disabled {
+    background: #f4f4f4;
+    color: #888;
+  }
+`;
+
+const FormacionInput = styled.input`
+  padding: 8px 14px;
+  border-radius: 10px;
+  border: 1px solid #dde3ea;
+  font-size: 14px;
+  font-weight: 600;
+  color: #333;
+  width: 140px;
+
+  &:disabled {
+    background: #f4f4f4;
+    color: #888;
+  }
 `;
 
 const QuitarBtn = styled.button`

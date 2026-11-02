@@ -112,19 +112,21 @@ const setUltimos90Dias = () => {
         //fecha_hasta: fechaHastaFormateada 
       //});
 
-      // 🔹 GIMNASIO (actividades)
-      const respGym = await axios.post(
-        `${API_BASE_URL}/historial_asistencia_actividades`,
-        {
-          codpersona,
-          codactividad,
-          coddivisiones,
-          fecha_desde: fechaDesdeFormateada,
-          fecha_hasta: fechaHastaFormateada,
-          esperado: ESPERADO_GYM_SEMANAL
-        },
-        config
-      );
+      // 🔹 GIMNASIO (actividades) — solo si hay una actividad seleccionada
+      const respGym = codactividad
+        ? await axios.post(
+            `${API_BASE_URL}/historial_asistencia_actividades`,
+            {
+              codpersona,
+              codactividad,
+              coddivisiones,
+              fecha_desde: fechaDesdeFormateada,
+              fecha_hasta: fechaHastaFormateada,
+              esperado: ESPERADO_GYM_SEMANAL
+            },
+            config
+          )
+        : null;
 
       // 🔹 ENTRENAMIENTO (divisiones)
       const respEntrenamiento = await axios.post(
@@ -138,7 +140,7 @@ const setUltimos90Dias = () => {
         config
       );
 
-      const gimnasioData = respGym.data?.detalle || [];
+      const gimnasioData = respGym?.data?.detalle || [];
       const entrenamientoData = Array.isArray(respEntrenamiento.data) ? respEntrenamiento.data : [];
       
       setDataGimnasio(gimnasioData);

@@ -40,6 +40,10 @@ const Persona = () => {
   const [nuevaDivision,setNuevaDivision] = useState("");
   const [nuevoRol,setNuevoRol] = useState("");
 
+  const [busqueda,setBusqueda] = useState("");
+  const [resultadosBusqueda,setResultadosBusqueda] = useState([]);
+  const [buscando,setBuscando] = useState(false);
+
   const [formData,setFormData] = useState({
     codpersona:"",
     nombre:"",
@@ -64,7 +68,10 @@ const Persona = () => {
 
   useEffect(()=>{
 
-    if(!currentDisciplina) return;
+    if(!currentDisciplina){
+      setLoading(false);
+      return;
+    }
 
     cargarDivisiones();
     cargarRoles();
@@ -159,6 +166,42 @@ const Persona = () => {
     }finally{
       setLoading(false);
     }
+
+  };
+
+  const buscarPersonas = async ()=>{
+
+    if(!busqueda || busqueda.trim().length < 2){
+      setResultadosBusqueda([]);
+      return;
+    }
+
+    try{
+
+      setBuscando(true);
+
+      const response = await axios.post(
+        `${API_BASE_URL}/personas_buscar`,
+        { filtro: busqueda.trim() },
+        { headers:{ Authorization:`Bearer ${localStorage.getItem("token")}` } }
+      );
+
+      setResultadosBusqueda(response.data);
+
+    }catch(err){
+      console.error(err);
+    }finally{
+      setBuscando(false);
+    }
+
+  };
+
+  const usarPersonaExistente = (codpersona)=>{
+
+    setResultadosBusqueda([]);
+    setBusqueda("");
+    setLoading(true);
+    fetchPersonaDetalle(codpersona);
 
   };
 
@@ -277,6 +320,22 @@ const Persona = () => {
 
   }
 
+  if(!currentDisciplina){
+
+    return(
+      <Container80>
+        <Header/>
+        <LoadingContainer>
+          <p>Elegí un club y una disciplina arriba para poder crear o editar una persona.</p>
+          <BackButton onClick={()=>navigate("/dashboard")}>
+            <FaArrowLeft/> Volver
+          </BackButton>
+        </LoadingContainer>
+      </Container80>
+    );
+
+  }
+
   return(
 
     <Container80>
@@ -301,6 +360,78 @@ const Persona = () => {
       </NavigationBar>
 
       <ContentContainer>
+
+        {!formData.codpersona && (
+
+          <SearchCard>
+
+            <CardTitle>
+              <FaUser/> ¿Ya existe esta persona?
+            </CardTitle>
+
+            <p style={{fontSize:"13px",color:"#666",marginTop:0}}>
+              Buscá por nombre o DNI antes de dar de alta: si ya existe en otro club o disciplina,
+              podés sumarle esta división en vez de crearla de nuevo.
+            </p>
+
+            <SearchRow>
+
+              <Input
+                placeholder="Nombre o DNI..."
+                value={busqueda}
+                onChange={(e)=>setBusqueda(e.target.value)}
+                onKeyDown={(e)=>{ if(e.key === "Enter") buscarPersonas(); }}
+              />
+
+              <AddButton onClick={buscarPersonas} disabled={buscando}>
+                {buscando ? <FaSpinner className="spin"/> : "Buscar"}
+              </AddButton>
+
+            </SearchRow>
+
+            {resultadosBusqueda.length > 0 && (
+
+              <ResultadosList>
+
+                {resultadosBusqueda.map(p=>(
+
+                  <ResultadoItem key={p.codpersona}>
+
+                    <div>
+
+                      <strong>{p.nombre}</strong>
+                      {p.apodo ? ` (${p.apodo})` : ""}
+                      {p.dni ? ` - DNI ${p.dni}` : ""}
+
+                      <PertenenciaInfo>
+                        {(p.pertenece_a && p.pertenece_a.length > 0)
+                          ? p.pertenece_a.map((pa,i)=>(
+                              <span key={i}>
+                                {pa.club} · {pa.disciplina || "-"} · {pa.division}
+                                {i < p.pertenece_a.length - 1 ? "  |  " : ""}
+                              </span>
+                            ))
+                          : "Sin club/división asignado todavía"
+                        }
+                      </PertenenciaInfo>
+
+                    </div>
+
+                    <AddButton onClick={()=>usarPersonaExistente(p.codpersona)}>
+                      Usar esta persona
+                    </AddButton>
+
+                  </ResultadoItem>
+
+                ))}
+
+              </ResultadosList>
+
+            )}
+
+          </SearchCard>
+
+        )}
 
         <InfoGrid>
 
@@ -558,6 +689,38 @@ border:1px solid #ccc;
 border-radius:6px;
 `;
 
+
+const SearchCard = styled(InfoCard)`
+  margin-bottom:20px;
+`;
+
+const SearchRow = styled.div`
+  display:flex;
+  gap:10px;
+`;
+
+const ResultadosList = styled.div`
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+  margin-top:14px;
+`;
+
+const ResultadoItem = styled.div`
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:10px;
+  padding:10px;
+  background:#f1f3f5;
+  border-radius:6px;
+`;
+
+const PertenenciaInfo = styled.div`
+  font-size:12px;
+  color:#666;
+  margin-top:2px;
+`;
 
 const DivisionesCard = styled(InfoCard)`
   margin-top:20px;

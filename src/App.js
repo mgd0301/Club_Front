@@ -12,6 +12,7 @@ import AdministrarGrupos from './pages/AdministrarGrupos';
 import ArmarConvocatoria from './pages/ArmarConvocatoria';
 import PartidoEnVivo from './pages/PartidoEnVivo';
 import SucesosAdmin from './pages/SucesosAdmin';
+import AdministrarSistema from './pages/AdministrarSistema';
 
 import { useContext } from 'react';
 
@@ -131,6 +132,15 @@ function App() {
           element={
             <ProtectedRoute>
               <AdministrarGrupos />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/administrarsistema"
+          element={
+            <ProtectedRoute>
+              <AdministrarSistema />
             </ProtectedRoute>
           }
         />

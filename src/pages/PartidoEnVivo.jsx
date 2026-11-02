@@ -101,8 +101,7 @@ const PartidoEnVivo = () => {
   const [procesandoKey, setProcesandoKey] = useState(null); // qué botón está procesando, para mostrar el spinner ahí
   const [mostrarTodosRegistrados, setMostrarTodosRegistrados] = useState(false);
   const [filtroEquipoRegistrados, setFiltroEquipoRegistrados] = useState("T"); // "T"=todos, "N"=nosotros, "R"=rival
-  const [vistaRegistros, setVistaRegistros] = useState("registros"); // "registros" | "resumen"
-  const [mostrarMinutos, setMostrarMinutos] = useState(false);
+  const [vistaRegistros, setVistaRegistros] = useState("registros"); // "registros" | "resumen" | "minutos"
   const [editandoTiempo, setEditandoTiempo] = useState(false);
   const [irAMinutoValor, setIrAMinutoValor] = useState("");
   const [irASegundoValor, setIrASegundoValor] = useState("");
@@ -669,6 +668,13 @@ const PartidoEnVivo = () => {
       });
       return;
     }
+    if (suceso.invierte_equipo === "S") {
+      // Ej: Gol en contra. "equipo" es quien lo COMETIÓ; el gol se anota al
+      // equipo contrario, así que se registra con el equipo beneficiario.
+      const equipoBeneficiario = equipo === "N" ? "R" : "N";
+      registrarConEquipo(suceso, equipoBeneficiario, equipo);
+      return;
+    }
     registrarConEquipo(suceso, equipo);
   };
 
@@ -1077,6 +1083,7 @@ const PartidoEnVivo = () => {
               <Puntaje>{resultadoRival + resultadoRivalSucesos}</Puntaje>
             </EquipoBox>
           </Tanteador>
+          {evento?.formacion && <FormacionBadge>⚽ {evento.formacion}</FormacionBadge>}
         </PanelPartido>
 
         {soloLectura && <SoloLecturaBadge>Evento finalizado · solo lectura</SoloLecturaBadge>}
@@ -1273,7 +1280,11 @@ const PartidoEnVivo = () => {
           <ResultadoPanel>
             <ResultadoTexto>
               <b>{sucesoParaEquipo.descripcion}</b> —{" "}
-              {esSucesoPateable(sucesoParaEquipo) ? "¿qué equipo hizo el penal?" : "¿para qué equipo?"}
+              {esSucesoPateable(sucesoParaEquipo) || sucesoParaEquipo.descripcion === "Penal"
+                ? "¿qué equipo hizo el penal?"
+                : sucesoParaEquipo.invierte_equipo === "S"
+                ? "¿qué equipo hizo el gol en contra?"
+                : "¿para qué equipo?"}
             </ResultadoTexto>
             <EquipoBotones>
               <EquipoBtn onClick={() => handleElegirEquipo(sucesoParaEquipo, "N")} disabled={guardando}>
@@ -1441,7 +1452,13 @@ const PartidoEnVivo = () => {
           <ResultadoPanel>
             <ResultadoTexto>
               <b>{sucesoParaJugador.descripcion}</b> —{" "}
-              {sucesoParaJugadorEquipo === "R" ? "¿qué jugador cometió el penal?" : "¿de qué jugador?"}
+              {sucesoParaJugador.invierte_equipo === "S"
+                ? "¿qué jugador hizo el gol en contra?"
+                : sucesoParaJugador.descripcion === "Penal"
+                ? "¿qué jugador hizo el penal?"
+                : sucesoParaJugadorEquipo === "R"
+                ? "¿qué jugador cometió el penal?"
+                : "¿de qué jugador?"}
             </ResultadoTexto>
             <ResultadoBotones>
               <ResultadoBtn
@@ -1620,15 +1637,19 @@ const PartidoEnVivo = () => {
 
         <Seccion>
           <SeccionHeader>
-            <SeccionTitulo>
-              <TituloTab activo={vistaRegistros === "registros"} onClick={() => setVistaRegistros("registros")}>
-                Registros
-              </TituloTab>
-              {" / "}
-              <TituloTab activo={vistaRegistros === "resumen"} onClick={() => setVistaRegistros("resumen")}>
-                Resumen
-              </TituloTab>
-            </SeccionTitulo>
+            <TabsRow>
+              <TabCard activo={vistaRegistros === "registros"} onClick={() => setVistaRegistros("registros")}>
+                📋 Registros
+              </TabCard>
+              <TabCard activo={vistaRegistros === "resumen"} onClick={() => setVistaRegistros("resumen")}>
+                📊 Resumen
+              </TabCard>
+              {jugadores.length > 0 && (
+                <TabCard activo={vistaRegistros === "minutos"} onClick={() => setVistaRegistros("minutos")}>
+                  ⏱️ Minutos jugados
+                </TabCard>
+              )}
+            </TabsRow>
             {vistaRegistros === "registros" && (
             <FiltroEquipoBotones>
               <FiltroEquipoBtn
@@ -1673,19 +1694,35 @@ const PartidoEnVivo = () => {
               {descripcionesResumen.map((descripcion) => (
                 <ResumenFila key={descripcion}>
                   <ResumenCeldaNombre>{descripcion}</ResumenCeldaNombre>
-                  <ResumenCantidad>{resumenPorEquipo.N[descripcion] || 0}</ResumenCantidad>
-                  <ResumenCantidad>{resumenPorEquipo.R[descripcion] || 0}</ResumenCantidad>
+                  <ResumenCantidad equipo="N">{resumenPorEquipo.N[descripcion] || 0}</ResumenCantidad>
+                  <ResumenCantidad equipo="R">{resumenPorEquipo.R[descripcion] || 0}</ResumenCantidad>
                 </ResumenFila>
               ))}
               {descripcionesResumen.length === 0 && (
                 <EmptyState>Sin sucesos registrados</EmptyState>
               )}
             </ResumenTabla>
+          ) : vistaRegistros === "minutos" ? (
+            <MinutosLista>
+              {jugadores
+                .slice()
+                .sort((a, b) => (minutosJugados[b.codpersona] || 0) - (minutosJugados[a.codpersona] || 0))
+                .map((j) => (
+                  <MinutosItem key={j.codpersona}>
+                    <MinutosNombre>{j.apodo || j.nombre}</MinutosNombre>
+                    {j.posicion_descripcion && <MinutosPosicion>{j.posicion_descripcion}</MinutosPosicion>}
+                    <MinutosEstado enCancha={jugadoresEnCanchaIds.has(j.codpersona)}>
+                      {jugadoresEnCanchaIds.has(j.codpersona) ? "En cancha" : "Banco"}
+                    </MinutosEstado>
+                    <MinutosValor>{minutosJugados[j.codpersona] || 0}'</MinutosValor>
+                  </MinutosItem>
+                ))}
+            </MinutosLista>
           ) : (
           <Lista>
             {(mostrarTodosRegistrados
-              ? registradosFiltrados
-              : registradosFiltrados.slice(-REGISTRADOS_VISIBLES)
+              ? registradosFiltrados.slice().reverse()
+              : registradosFiltrados.slice(-REGISTRADOS_VISIBLES).reverse()
             ).map((r) => (
               <ItemRegistrado key={r.codeventosuceso} equipo={r.equipo}>
                 <ItemTiempo>{pad(r.minuto)}:{pad(r.segundo)}</ItemTiempo>
@@ -1739,31 +1776,6 @@ const PartidoEnVivo = () => {
             </ToggleBtn>
           )}
         </Seccion>
-
-        {jugadores.length > 0 && (
-          <Seccion>
-            <SeccionTitulo>Minutos jugados</SeccionTitulo>
-            {mostrarMinutos && (
-              <MinutosLista>
-                {jugadores
-                  .slice()
-                  .sort((a, b) => (minutosJugados[b.codpersona] || 0) - (minutosJugados[a.codpersona] || 0))
-                  .map((j) => (
-                    <MinutosItem key={j.codpersona}>
-                      <MinutosNombre>{j.apodo || j.nombre}</MinutosNombre>
-                      <MinutosEstado enCancha={jugadoresEnCanchaIds.has(j.codpersona)}>
-                        {jugadoresEnCanchaIds.has(j.codpersona) ? "En cancha" : "Banco"}
-                      </MinutosEstado>
-                      <MinutosValor>{minutosJugados[j.codpersona] || 0}'</MinutosValor>
-                    </MinutosItem>
-                  ))}
-              </MinutosLista>
-            )}
-            <ToggleBtn onClick={() => setMostrarMinutos((v) => !v)}>
-              {mostrarMinutos ? "▲ Ocultar minutos jugados" : "▼ Ver minutos jugados"}
-            </ToggleBtn>
-          </Seccion>
-        )}
 
         <FooterButtons>
           <BackButton
@@ -1832,6 +1844,17 @@ const FechaEvento = styled.div`
   font-weight: 600;
   color: #999;
   margin-bottom: 14px;
+`;
+
+const FormacionBadge = styled.div`
+  font-size: 12px;
+  font-weight: 700;
+  color: #1d3557;
+  background: #eef3f9;
+  width: fit-content;
+  margin: 10px auto 0;
+  padding: 4px 12px;
+  border-radius: 14px;
 `;
 
 const Tanteador = styled.div`
@@ -2307,14 +2330,22 @@ const JugadoresGrid = styled.div`
 `;
 
 const JugadorBtn = styled.button`
-  padding: 10px 16px;
-  border-radius: 20px;
+  width: 92px;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 6px 8px;
+  border-radius: 14px;
   border: none;
   background: ${({ tipo }) => (tipo === "sale" ? "#e63946" : tipo === "entra" ? "#2ecc71" : "#4a90e2")};
   color: white;
   font-weight: 600;
-  font-size: 14px;
+  font-size: 13px;
+  line-height: 1.2;
   cursor: pointer;
+  overflow: hidden;
 
   &:hover {
     background: ${({ tipo }) => (tipo === "sale" ? "#c62d3a" : tipo === "entra" ? "#27ae60" : "#3b7dc4")};
@@ -2326,8 +2357,9 @@ const JugadorBtn = styled.button`
   }
 
   @media (max-width: 480px) {
-    padding: 7px 12px;
-    font-size: 12px;
+    width: 78px;
+    height: 50px;
+    font-size: 11px;
   }
 `;
 
@@ -2511,6 +2543,16 @@ const MinutosNombre = styled.div`
   font-size: 14px;
 `;
 
+const MinutosPosicion = styled.span`
+  font-size: 11px;
+  font-weight: 600;
+  color: #4a90e2;
+  background: #eef3f9;
+  padding: 3px 8px;
+  border-radius: 10px;
+  flex-shrink: 0;
+`;
+
 const MinutosEstado = styled.span`
   font-size: 11px;
   font-weight: 700;
@@ -2537,47 +2579,61 @@ const Seccion = styled.div`
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
 `;
 
-const SeccionTitulo = styled.h3`
-  margin: 0 0 12px;
-  font-size: 16px;
-  color: #333;
+const TabsRow = styled.div`
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
 `;
 
-const TituloTab = styled.span`
+const TabCard = styled.button`
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border-radius: 12px;
+  border: none;
+  background: ${({ activo }) => (activo ? "#4a90e2" : "#f0f2f5")};
+  color: ${({ activo }) => (activo ? "#fff" : "#555")};
+  font-weight: 700;
+  font-size: 13px;
   cursor: pointer;
-  color: ${({ activo }) => (activo ? "#333" : "#aaa")};
-  text-decoration: ${({ activo }) => (activo ? "underline" : "none")};
+  box-shadow: ${({ activo }) => (activo ? "0 3px 8px rgba(74, 144, 226, 0.35)" : "none")};
+  transition: background 0.15s ease, box-shadow 0.15s ease, transform 0.1s ease;
 
   &:hover {
-    color: #333;
+    background: ${({ activo }) => (activo ? "#4a90e2" : "#e4e8ed")};
+    transform: translateY(-1px);
+  }
+
+  &:active {
+    transform: translateY(0);
   }
 `;
 
 const ResumenTabla = styled.div`
   display: flex;
   flex-direction: column;
-  background: #f8f9fa;
-  border-radius: 10px;
-  padding: 4px 14px;
+  gap: 8px;
 `;
 
 const ResumenFila = styled.div`
   display: grid;
-  grid-template-columns: 1fr 70px 70px;
+  grid-template-columns: 1fr 56px 56px;
   align-items: center;
-  gap: 8px;
-  padding: 8px 0;
-  border-bottom: 1px solid #e9e9e9;
+  gap: 10px;
+  padding: 10px 14px;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
   font-size: 14px;
   color: #333;
-
-  &:last-child {
-    border-bottom: none;
-  }
 `;
 
 const ResumenHeaderFila = styled(ResumenFila)`
-  border-bottom: 2px solid #ddd;
+  background: transparent;
+  box-shadow: none;
+  padding: 0 14px;
+  margin-bottom: -2px;
 `;
 
 const ResumenHeaderEquipo = styled.div`
@@ -2586,21 +2642,29 @@ const ResumenHeaderEquipo = styled.div`
   justify-content: center;
   gap: 6px;
   font-weight: 700;
-  color: #333;
+  font-size: 12px;
+  color: #888;
   text-align: center;
 
   img, svg {
-    width: 20px;
-    height: 20px;
+    width: 18px;
+    height: 18px;
   }
 `;
 
-const ResumenCeldaNombre = styled.div``;
+const ResumenCeldaNombre = styled.div`
+  font-weight: 600;
+`;
 
 const ResumenCantidad = styled.div`
-  font-weight: 700;
-  color: #4a90e2;
+  font-weight: 800;
+  font-size: 15px;
   text-align: center;
+  padding: 3px 0;
+  border-radius: 8px;
+  color: ${({ equipo }) => (equipo === "R" ? "#e63946" : "#1d3557")};
+  background: ${({ equipo }) =>
+    equipo === "R" ? "rgba(230, 57, 70, 0.1)" : "rgba(29, 53, 87, 0.08)"};
 `;
 
 const SeccionHeader = styled.div`
@@ -2610,10 +2674,6 @@ const SeccionHeader = styled.div`
   gap: 8px;
   flex-wrap: wrap;
   margin-bottom: 12px;
-
-  ${SeccionTitulo} {
-    margin-bottom: 0;
-  }
 `;
 
 const FiltroEquipoBotones = styled.div`
